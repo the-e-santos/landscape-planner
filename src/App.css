@@ -1,4 +1,290 @@
+.app-shell,
 .viewport {
   width: 100%;
   height: 100%;
+}
+
+.app-shell {
+  position: relative;
+  color: #1f2d24;
+}
+
+.viewport canvas {
+  display: block;
+}
+
+.parcel-panel {
+  position: absolute;
+  top: 16px;
+  left: 16px;
+  width: min(340px, calc(100vw - 32px));
+  max-height: calc(100vh - 32px);
+  box-sizing: border-box;
+  overflow-y: auto;
+  padding: 20px;
+  border: 1px solid rgb(255 255 255 / 55%);
+  border-radius: 14px;
+  background: rgb(249 250 246 / 94%);
+  box-shadow: 0 12px 35px rgb(30 50 35 / 22%);
+  backdrop-filter: blur(10px);
+}
+
+.parcel-panel header {
+  margin-bottom: 20px;
+}
+
+.parcel-panel h1,
+.parcel-panel h2,
+.parcel-panel p {
+  margin-top: 0;
+}
+
+.parcel-panel h1 {
+  margin-bottom: 8px;
+  font-size: 1.55rem;
+  line-height: 1.1;
+}
+
+.parcel-panel h2 {
+  margin-bottom: 12px;
+  font-size: 0.86rem;
+  letter-spacing: 0.02em;
+  text-transform: uppercase;
+}
+
+.eyebrow {
+  margin-bottom: 6px;
+  color: #637568;
+  font-size: 0.72rem;
+  font-weight: 700;
+  letter-spacing: 0.12em;
+  text-transform: uppercase;
+}
+
+.panel-intro,
+.field-note {
+  color: #5c6c61;
+  line-height: 1.45;
+}
+
+.panel-intro {
+  margin-bottom: 0;
+  font-size: 0.88rem;
+}
+
+.editor-section,
+.segmented-field {
+  margin: 0;
+  padding: 16px 0;
+  border: 0;
+  border-top: 1px solid #d9dfd8;
+}
+
+.segmented-field legend {
+  display: block;
+  float: left;
+  width: 100%;
+  margin-bottom: 9px;
+  font-size: 0.78rem;
+  font-weight: 700;
+}
+
+.segmented-field::after {
+  display: block;
+  clear: both;
+  content: '';
+}
+
+.segmented-control {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  padding: 3px;
+  border-radius: 9px;
+  background: #e4e9e3;
+}
+
+button,
+input,
+select {
+  font: inherit;
+}
+
+button {
+  cursor: pointer;
+}
+
+button:disabled {
+  cursor: not-allowed;
+  opacity: 0.38;
+}
+
+.segmented-control button {
+  padding: 8px 10px;
+  border: 0;
+  border-radius: 7px;
+  color: #435348;
+  background: transparent;
+}
+
+.segmented-control button[aria-pressed='true'] {
+  color: #17251b;
+  background: #fff;
+  box-shadow: 0 1px 4px rgb(35 55 40 / 18%);
+}
+
+.field {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  margin: 10px 0;
+  font-size: 0.82rem;
+  font-weight: 600;
+}
+
+.field > select,
+.number-input {
+  width: 132px;
+  box-sizing: border-box;
+}
+
+.field > select,
+.number-input input {
+  border: 1px solid #c5cec5;
+  border-radius: 7px;
+  color: #1f2d24;
+  background: #fff;
+}
+
+.field > select {
+  padding: 7px 9px;
+}
+
+.number-input {
+  display: grid;
+  grid-template-columns: 1fr 30px;
+  align-items: center;
+}
+
+.number-input input {
+  width: 100%;
+  min-width: 0;
+  box-sizing: border-box;
+  padding: 7px 8px;
+}
+
+.number-input span {
+  color: #69786e;
+  text-align: right;
+}
+
+.field-note {
+  margin-bottom: 0;
+  font-size: 0.75rem;
+}
+
+.section-heading,
+.vertex-heading {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+}
+
+.section-heading h2 {
+  margin-bottom: 0;
+}
+
+.text-button,
+.add-point-button,
+.icon-button {
+  border: 0;
+  color: #315f3f;
+  background: transparent;
+  font-weight: 700;
+}
+
+.text-button,
+.add-point-button {
+  padding: 4px 0;
+  font-size: 0.74rem;
+}
+
+.vertex-list {
+  display: grid;
+  gap: 8px;
+  margin-top: 12px;
+}
+
+.vertex-card {
+  padding: 10px 12px;
+  border: 1px solid #d9dfd8;
+  border-radius: 9px;
+  background: rgb(255 255 255 / 60%);
+}
+
+.vertex-heading {
+  margin-bottom: 4px;
+  font-size: 0.78rem;
+}
+
+.vertex-card .field {
+  margin: 7px 0;
+}
+
+.icon-button {
+  width: 25px;
+  height: 25px;
+  padding: 0;
+  border-radius: 50%;
+  font-size: 1.1rem;
+}
+
+.icon-button:hover:not(:disabled),
+.text-button:hover,
+.add-point-button:hover {
+  color: #173e25;
+  background: #e5eee7;
+}
+
+.panel-legend {
+  display: grid;
+  gap: 8px;
+  padding-top: 16px;
+  border-top: 1px solid #d9dfd8;
+  color: #5c6c61;
+  font-size: 0.72rem;
+}
+
+.panel-legend span {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.legend-swatch {
+  display: inline-block;
+  width: 20px;
+  height: 3px;
+  border-radius: 2px;
+}
+
+.legend-swatch.boundary {
+  background: #b99737;
+  box-shadow: 0 0 0 4px rgb(241 199 91 / 30%);
+}
+
+.legend-swatch.north {
+  background: #c83232;
+}
+
+@media (max-width: 600px) {
+  .parcel-panel {
+    top: auto;
+    bottom: 10px;
+    left: 10px;
+    width: calc(100vw - 20px);
+    max-height: min(58vh, 520px);
+    padding: 16px;
+  }
 }

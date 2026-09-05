@@ -21,19 +21,17 @@ production infrastructure.
 
 ## Current milestone
 
-Milestone 1, the navigable WebGPU scene, is complete. Build Milestone 2, the
-coordinate and parcel foundation:
+Milestones 1 and 2 are complete. Build Milestone 3, domain/scene separation:
 
-- documented coordinate convention and unit helpers
-- true-north indicator
-- parameterized rectangular parcel, followed by a polygon parcel
-- visible property boundary
-- uncertainty corridor data and basic visualization
-- metric/US-customary input-display conversion without changing stored units
+- minimal versioned project schema
+- domain objects independent of Three.js
+- view synchronization from domain state
+- object IDs and a small command/update API
+- round-trip serialization test
 
-Do not begin the domain/project schema, primitive editing, quantitative solar
-solver, plant database, arbitrary mesh import, or broad application framework
-during this milestone unless explicitly asked.
+Do not begin primitive editing, persistence UI, the quantitative solar solver,
+plant database, arbitrary mesh import, or a broad application framework during
+this milestone unless explicitly asked.
 
 After that, follow the milestone order in `docs/PROJECT_PLAN.md`.
 

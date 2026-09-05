@@ -1,10 +1,45 @@
-import { useEffect, useRef } from 'react'
-import * as THREE from 'three/webgpu'
-import { OrbitControls } from 'three/addons/controls/OrbitControls.js'
+import { useEffect, useMemo, useRef, useState } from 'react'
+import { ParcelEditor, type ParcelMode } from './components/ParcelEditor'
+import {
+  createRectangleVertices,
+  insertParcelMidpoint,
+  type ParcelGeometry,
+  type ParcelPoint,
+} from './domain/parcel'
+import type { DisplayUnit } from './domain/units'
+import { createYardScene, type YardScene } from './scene/createYardScene'
 import './App.css'
 
 function App() {
   const viewportRef = useRef<HTMLDivElement>(null)
+  const yardSceneRef = useRef<YardScene | null>(null)
+  const [mode, setMode] = useState<ParcelMode>('rectangle')
+  const [unit, setUnit] = useState<DisplayUnit>('meters')
+  const [rectangle, setRectangle] = useState({
+    eastWestMeters: 30,
+    northSouthMeters: 40,
+  })
+  const [polygonVertices, setPolygonVertices] = useState<ParcelPoint[]>(() =>
+    createRectangleVertices(30, 40),
+  )
+  const [polygonIsCustomized, setPolygonIsCustomized] = useState(false)
+  const [uncertaintyMeters, setUncertaintyMeters] = useState(0.3)
+
+  const rectangleVertices = useMemo(
+    () =>
+      createRectangleVertices(
+        rectangle.eastWestMeters,
+        rectangle.northSouthMeters,
+      ),
+    [rectangle],
+  )
+  const parcel = useMemo<ParcelGeometry>(
+    () => ({
+      vertices: mode === 'rectangle' ? rectangleVertices : polygonVertices,
+      uncertaintyMeters,
+    }),
+    [mode, polygonVertices, rectangleVertices, uncertaintyMeters],
+  )
 
   useEffect(() => {
     const viewport = viewportRef.current
@@ -13,104 +48,61 @@ function App() {
       return
     }
 
-    // Scene
-    const scene = new THREE.Scene()
-    scene.background = new THREE.Color(0xdde8f0)
+    const yardScene = createYardScene(viewport)
+    yardSceneRef.current = yardScene
 
-    // Camera
-    const camera = new THREE.PerspectiveCamera(
-      50,
-      viewport.clientWidth / viewport.clientHeight,
-      0.1,
-      1000,
-    )
-
-    camera.position.set(20, 20, 20)
-
-    // Renderer
-    const renderer = new THREE.WebGPURenderer({
-      antialias: true,
-    })
-
-    renderer.setPixelRatio(Math.min(window.devicePixelRatio, 2))
-    renderer.setSize(viewport.clientWidth, viewport.clientHeight)
-
-    viewport.appendChild(renderer.domElement)
-
-    // Camera controls
-    const controls = new OrbitControls(camera, renderer.domElement)
-    controls.target.set(0, 0, 0)
-    controls.enableDamping = true
-
-    // Ground
-    const groundGeometry = new THREE.PlaneGeometry(30, 30)
-    const groundMaterial = new THREE.MeshStandardMaterial({
-      color: 0x7fa36b,
-    })
-
-    const ground = new THREE.Mesh(groundGeometry, groundMaterial)
-    ground.rotation.x = -Math.PI / 2
-    scene.add(ground)
-
-    // Temporary "house"
-    const houseGeometry = new THREE.BoxGeometry(6, 3, 8)
-    const houseMaterial = new THREE.MeshStandardMaterial({
-      color: 0xb8afa2,
-    })
-
-    const house = new THREE.Mesh(houseGeometry, houseMaterial)
-    house.position.set(-4, 1.5, 0)
-    scene.add(house)
-
-    // Reference grid
-    const grid = new THREE.GridHelper(30, 30)
-    scene.add(grid)
-
-    // Lighting
-    const skyLight = new THREE.HemisphereLight(0xffffff, 0x444444, 2)
-    scene.add(skyLight)
-
-    const sunLight = new THREE.DirectionalLight(0xffffff, 3)
-    sunLight.position.set(10, 15, 5)
-    scene.add(sunLight)
-
-    // Resize handling
-    const handleResize = () => {
-      camera.aspect = viewport.clientWidth / viewport.clientHeight
-      camera.updateProjectionMatrix()
-
-      renderer.setSize(
-        viewport.clientWidth,
-        viewport.clientHeight,
-      )
-    }
-
-    window.addEventListener('resize', handleResize)
-
-    // Render loop
-    renderer.setAnimationLoop(() => {
-      controls.update()
-      renderer.render(scene, camera)
-    })
-
-    // React cleanup
     return () => {
-      window.removeEventListener('resize', handleResize)
-
-      renderer.setAnimationLoop(null)
-      controls.dispose()
-
-      groundGeometry.dispose()
-      groundMaterial.dispose()
-      houseGeometry.dispose()
-      houseMaterial.dispose()
-      renderer.dispose()
-
-      renderer.domElement.remove()
+      yardSceneRef.current = null
+      yardScene.dispose()
     }
-  }, [])
+  }, []) // The Three.js lifecycle is intentionally independent of React state.
 
-  return <div ref={viewportRef} className="viewport" />
+  useEffect(() => {
+    yardSceneRef.current?.updateParcel(parcel)
+  }, [parcel])
+
+  return (
+    <main className="app-shell">
+      <div ref={viewportRef} className="viewport" />
+      <ParcelEditor
+        mode={mode}
+        unit={unit}
+        rectangle={rectangle}
+        polygonVertices={polygonVertices}
+        uncertaintyMeters={uncertaintyMeters}
+        onModeChange={(nextMode) => {
+          if (nextMode === 'polygon' && !polygonIsCustomized) {
+            setPolygonVertices(rectangleVertices)
+          }
+
+          setMode(nextMode)
+        }}
+        onUnitChange={setUnit}
+        onRectangleChange={setRectangle}
+        onPolygonChange={(vertices) => {
+          setPolygonIsCustomized(true)
+          setPolygonVertices(vertices)
+        }}
+        onInsertVertex={(afterIndex) => {
+          setPolygonIsCustomized(true)
+          setPolygonVertices((vertices) =>
+            insertParcelMidpoint(vertices, afterIndex),
+          )
+        }}
+        onRemoveVertex={(index) => {
+          setPolygonIsCustomized(true)
+          setPolygonVertices((vertices) =>
+            vertices.filter((_, vertexIndex) => vertexIndex !== index),
+          )
+        }}
+        onResetPolygon={() => {
+          setPolygonIsCustomized(false)
+          setPolygonVertices(rectangleVertices)
+        }}
+        onUncertaintyChange={setUncertaintyMeters}
+      />
+    </main>
+  )
 }
 
 export default App
