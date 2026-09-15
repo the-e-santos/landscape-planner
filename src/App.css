@@ -13,10 +13,10 @@
   display: block;
 }
 
-.parcel-panel {
+.parcel-panel,
+.terrain-panel {
   position: absolute;
   top: 16px;
-  left: 16px;
   width: min(340px, calc(100vw - 32px));
   max-height: calc(100vh - 32px);
   box-sizing: border-box;
@@ -29,20 +29,135 @@
   backdrop-filter: blur(10px);
 }
 
-.parcel-panel header {
+.parcel-panel {
+  left: 16px;
+}
+
+.terrain-panel {
+  right: 16px;
+}
+
+.parcel-panel header,
+.terrain-panel header {
   margin-bottom: 20px;
 }
 
 .parcel-panel h1,
 .parcel-panel h2,
-.parcel-panel p {
+.parcel-panel p,
+.terrain-panel h1,
+.terrain-panel p {
   margin-top: 0;
 }
 
-.parcel-panel h1 {
+.parcel-panel h1,
+.terrain-panel h1 {
   margin-bottom: 8px;
   font-size: 1.55rem;
   line-height: 1.1;
+}
+
+.primary-small-button {
+  padding: 8px 10px;
+  border: 0;
+  border-radius: 7px;
+  color: #fff;
+  background: #315f3f;
+  font-size: 0.75rem;
+  font-weight: 700;
+}
+
+.primary-small-button:hover {
+  background: #173e25;
+}
+
+.terrain-validation,
+.terrain-valid {
+  margin: 0 0 14px;
+  padding: 10px 12px;
+  border-radius: 8px;
+  font-size: 0.75rem;
+  line-height: 1.4;
+}
+
+.terrain-validation {
+  border: 1px solid #d49b75;
+  color: #69371f;
+  background: #fff1e7;
+}
+
+.terrain-validation ul {
+  margin: 6px 0 0;
+  padding-left: 18px;
+}
+
+.terrain-valid {
+  color: #315f3f;
+  background: #e5eee7;
+}
+
+.terrain-spot-list {
+  display: grid;
+  gap: 8px;
+}
+
+.terrain-spot-card {
+  padding: 10px 12px;
+  border: 1px solid #d9dfd8;
+  border-radius: 9px;
+  background: rgb(255 255 255 / 60%);
+}
+
+.terrain-spot-card summary {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  cursor: pointer;
+  font-size: 0.8rem;
+  font-weight: 700;
+}
+
+.terrain-spot-card summary::before {
+  content: '▸';
+  color: #637568;
+}
+
+.terrain-spot-card[open] summary::before {
+  content: '▾';
+}
+
+.terrain-spot-card summary span:first-of-type {
+  flex: 1;
+}
+
+.terrain-spot-card code {
+  display: block;
+  overflow: hidden;
+  margin: 8px 0;
+  color: #778178;
+  font-size: 0.65rem;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.terrain-spot-card .field {
+  margin: 7px 0;
+}
+
+.remove-spot-button {
+  width: 100%;
+  margin-top: 8px;
+  padding: 7px;
+  border: 1px solid #d5b3a1;
+  border-radius: 7px;
+  color: #7a3d25;
+  background: #fff8f4;
+  font-size: 0.72rem;
+  font-weight: 700;
+}
+
+.remove-spot-button:hover:not(:disabled) {
+  background: #fbe8dc;
 }
 
 .parcel-panel h2 {
@@ -278,13 +393,21 @@ button:disabled {
   background: #c83232;
 }
 
-@media (max-width: 600px) {
+@media (max-width: 760px) {
   .parcel-panel {
     top: auto;
     bottom: 10px;
     left: 10px;
     width: calc(100vw - 20px);
-    max-height: min(58vh, 520px);
+    max-height: min(52vh, 520px);
+    padding: 16px;
+  }
+
+  .terrain-panel {
+    top: 10px;
+    right: 10px;
+    width: calc(100vw - 20px);
+    max-height: 38vh;
     padding: 16px;
   }
 }
