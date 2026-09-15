@@ -3,7 +3,8 @@ import { createRectangleVertices } from './parcel'
 import {
   createDefaultProject,
   DEFAULT_PARCEL_ID,
-  getProjectEntity,
+  getParcelEntity,
+  getTerrainEntity,
 } from './project'
 import { applyProjectCommand } from './projectCommands'
 import {
@@ -11,6 +12,7 @@ import {
   serializeProject,
 } from './projectSerialization'
 import { createProjectStore } from './projectStore'
+import { DEFAULT_TERRAIN_ID, type SpotElevation } from './terrain'
 
 describe('project model', () => {
   it('round-trips a representative versioned project through JSON', () => {
@@ -48,12 +50,53 @@ describe('project model', () => {
       geometry,
     })
 
-    expect(getProjectEntity(updated, DEFAULT_PARCEL_ID).geometry).toEqual(
+    expect(getParcelEntity(updated, DEFAULT_PARCEL_ID).geometry).toEqual(
       geometry,
     )
-    expect(getProjectEntity(original, DEFAULT_PARCEL_ID).geometry).not.toEqual(
+    expect(getParcelEntity(original, DEFAULT_PARCEL_ID).geometry).not.toEqual(
       geometry,
     )
+  })
+
+  it('adds, replaces, and removes a spot elevation by stable ID', () => {
+    const original = createDefaultProject()
+    const addedSpot: SpotElevation = {
+      id: 'terrain.main.spot.center',
+      eastMeters: 0,
+      northMeters: 0,
+      elevationMeters: 1,
+      source: { kind: 'user' },
+      uncertainty: { horizontalMeters: 0.1, verticalMeters: 0.05 },
+    }
+    const withAddedSpot = applyProjectCommand(original, {
+      type: 'terrain.spotElevation.add',
+      terrainEntityId: DEFAULT_TERRAIN_ID,
+      spotElevation: addedSpot,
+    })
+    const replacedSpot = { ...addedSpot, elevationMeters: 1.75 }
+    const withReplacedSpot = applyProjectCommand(withAddedSpot, {
+      type: 'terrain.spotElevation.replace',
+      terrainEntityId: DEFAULT_TERRAIN_ID,
+      spotElevation: replacedSpot,
+    })
+    const withRemovedSpot = applyProjectCommand(withReplacedSpot, {
+      type: 'terrain.spotElevation.remove',
+      terrainEntityId: DEFAULT_TERRAIN_ID,
+      spotElevationId: addedSpot.id,
+    })
+
+    expect(
+      getTerrainEntity(original, DEFAULT_TERRAIN_ID).spotElevations,
+    ).not.toContainEqual(addedSpot)
+    expect(
+      getTerrainEntity(withAddedSpot, DEFAULT_TERRAIN_ID).spotElevations,
+    ).toContainEqual(addedSpot)
+    expect(
+      getTerrainEntity(withReplacedSpot, DEFAULT_TERRAIN_ID).spotElevations,
+    ).toContainEqual(replacedSpot)
+    expect(
+      getTerrainEntity(withRemovedSpot, DEFAULT_TERRAIN_ID).spotElevations,
+    ).not.toContainEqual(replacedSpot)
   })
 
   it('notifies subscribers after dispatching a command', () => {

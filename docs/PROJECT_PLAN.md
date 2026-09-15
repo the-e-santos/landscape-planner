@@ -173,7 +173,7 @@ Initial supported primitives should be intentionally constrained:
 - polygon extrusion
 - cylinder
 - sphere or ellipsoid
-- terrain height field
+- constrained triangulated terrain surface with explicit discontinuity faces (e.g. retaining walls)
 - canopy
 - trellis or transmissive screen
 
@@ -523,7 +523,22 @@ Deliver:
 
 Do this before selection and editing create many implicit scene-graph assumptions.
 
-### Milestone 4 — Primitive editing
+### Milestone 4 — Terrain Editor
+
+Deliver:
+
+- authoritative spot-elevation points with source and uncertainty
+- grade-break, ridge, and swale constraints
+- retaining-wall upper and lower profiles
+- terrain clipped to the nominal parcel without deleting outside inputs
+- deterministic constrained triangulation of continuous regions
+- explicit vertical retaining-wall faces
+- editable terrain inputs and validation feedback
+- analytical terrain fixtures
+- clear separation between terrain inputs and derived mesh data
+
+
+### Milestone 5 — Primitive object editing
 
 Deliver:
 
@@ -534,7 +549,7 @@ Deliver:
 - snapping appropriate to the current task
 - undo/redo at the command level
 
-### Milestone 5 — Save and load
+### Milestone 6 — Save and load
 
 Deliver:
 
@@ -543,7 +558,7 @@ Deliver:
 - schema version and migration seam
 - local autosave/recovery later in this milestone
 
-### Milestone 6 — CPU point solar reference
+### Milestone 7 — CPU point solar reference
 
 Deliver:
 
@@ -554,7 +569,7 @@ Deliver:
 - small analytical fixture suite
 - numerical result panel at a selected date and solar time
 
-### Milestone 7 — Instant surface exposure
+### Milestone 8 — Instant surface exposure
 
 Deliver:
 
@@ -564,7 +579,7 @@ Deliver:
 - quantitative probe tool
 - separate direct, diffuse placeholder, and total display channels
 
-### Milestone 8 — Accumulated direct exposure
+### Milestone 9 — Accumulated direct exposure
 
 Deliver:
 
@@ -576,7 +591,7 @@ Deliver:
 
 This milestone proves the central performance architecture.
 
-### Milestone 9 — Anisotropic diffuse sky
+### Milestone 10 — Anisotropic diffuse sky
 
 Deliver:
 
@@ -588,7 +603,7 @@ Deliver:
 - diffuse visibility and heatmap
 - DHI closure/normalization tests
 
-### Milestone 10 — WebGPU acceleration
+### Milestone 11 — WebGPU acceleration
 
 Deliver:
 
@@ -601,7 +616,7 @@ Deliver:
 GPU acceleration can be prototyped earlier if it de-risks the architecture, but it
 must not replace the reference solver before correctness is established.
 
-### Milestone 11 — Beds, irrigation, and plants
+### Milestone 12 — Beds, irrigation, and plants
 
 Deliver:
 

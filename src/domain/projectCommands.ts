@@ -1,5 +1,6 @@
 import type { ParcelGeometry } from './parcel'
 import type { EntityId, LandscapeProject, ProjectEntity } from './project'
+import type { SpotElevation, TerrainEntity } from './terrain'
 
 export type ProjectCommand =
   | {
@@ -11,6 +12,43 @@ export type ProjectCommand =
       readonly type: 'project.northRotation.set'
       readonly northRotationRadians: number
     }
+  | {
+      readonly type: 'terrain.spotElevation.add'
+      readonly terrainEntityId: EntityId
+      readonly spotElevation: SpotElevation
+    }
+  | {
+      readonly type: 'terrain.spotElevation.replace'
+      readonly terrainEntityId: EntityId
+      readonly spotElevation: SpotElevation
+    }
+  | {
+      readonly type: 'terrain.spotElevation.remove'
+      readonly terrainEntityId: EntityId
+      readonly spotElevationId: string
+    }
+
+function cloneSpotElevation(spot: SpotElevation): SpotElevation {
+  return {
+    ...spot,
+    source: { ...spot.source },
+    uncertainty: { ...spot.uncertainty },
+  }
+}
+
+function updateTerrain(
+  project: LandscapeProject,
+  entityId: EntityId,
+  update: (terrain: TerrainEntity) => TerrainEntity,
+): LandscapeProject {
+  return replaceEntity(project, entityId, (entity) => {
+    if (entity.kind !== 'terrain') {
+      throw new Error(`Entity is not terrain: ${entityId}`)
+    }
+
+    return update(entity)
+  })
+}
 
 function replaceEntity(
   project: LandscapeProject,
@@ -66,5 +104,62 @@ export function applyProjectCommand(
           northRotationRadians: command.northRotationRadians,
         },
       }
+
+    case 'terrain.spotElevation.add':
+      return updateTerrain(project, command.terrainEntityId, (terrain) => {
+        if (
+          terrain.spotElevations.some(
+            ({ id }) => id === command.spotElevation.id,
+          )
+        ) {
+          throw new Error(
+            `Spot elevation already exists: ${command.spotElevation.id}`,
+          )
+        }
+
+        return {
+          ...terrain,
+          spotElevations: [
+            ...terrain.spotElevations,
+            cloneSpotElevation(command.spotElevation),
+          ],
+        }
+      })
+
+    case 'terrain.spotElevation.replace':
+      return updateTerrain(project, command.terrainEntityId, (terrain) => {
+        let found = false
+        const spotElevations = terrain.spotElevations.map((spot) => {
+          if (spot.id !== command.spotElevation.id) {
+            return spot
+          }
+
+          found = true
+          return cloneSpotElevation(command.spotElevation)
+        })
+
+        if (!found) {
+          throw new Error(
+            `Spot elevation not found: ${command.spotElevation.id}`,
+          )
+        }
+
+        return { ...terrain, spotElevations }
+      })
+
+    case 'terrain.spotElevation.remove':
+      return updateTerrain(project, command.terrainEntityId, (terrain) => {
+        const spotElevations = terrain.spotElevations.filter(
+          ({ id }) => id !== command.spotElevationId,
+        )
+
+        if (spotElevations.length === terrain.spotElevations.length) {
+          throw new Error(
+            `Spot elevation not found: ${command.spotElevationId}`,
+          )
+        }
+
+        return { ...terrain, spotElevations }
+      })
   }
 }

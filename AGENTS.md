@@ -29,7 +29,7 @@ Milestones 1 and 2 are complete. Build Milestone 3, domain/scene separation:
 - object IDs and a small command/update API
 - round-trip serialization test
 
-Do not begin primitive editing, persistence UI, the quantitative solar solver,
+Do not begin terrain or primitive object editing, persistence UI, the quantitative solar solver,
 plant database, arbitrary mesh import, or a broad application framework during
 this milestone unless explicitly asked.
 

@@ -1,7 +1,7 @@
 import * as THREE from 'three/webgpu'
 import { OrbitControls } from 'three/addons/controls/OrbitControls.js'
 import { getParcelBounds } from '../domain/parcel'
-import type { LandscapeProject } from '../domain/project'
+import type { LandscapeProject, ParcelEntity } from '../domain/project'
 import {
   createParcelView,
   PARCEL_VIEW_HEIGHT,
@@ -70,7 +70,10 @@ export function createYardScene(viewport: HTMLDivElement): YardScene {
   const parcelViews = new Map<string, ParcelView>()
 
   const updateProject = (project: LandscapeProject) => {
-    const activeIds = new Set(project.entities.map(({ id }) => id))
+    const parcelEntities = project.entities.filter(
+      (entity): entity is ParcelEntity => entity.kind === 'parcel',
+    )
+    const activeIds = new Set(parcelEntities.map(({ id }) => id))
 
     parcelViews.forEach((view, entityId) => {
       if (!activeIds.has(entityId)) {
@@ -79,7 +82,7 @@ export function createYardScene(viewport: HTMLDivElement): YardScene {
       }
     })
 
-    project.entities.forEach((entity) => {
+    parcelEntities.forEach((entity) => {
       const existingView = parcelViews.get(entity.id)
 
       if (existingView) {
@@ -91,7 +94,7 @@ export function createYardScene(viewport: HTMLDivElement): YardScene {
       }
     })
 
-    const parcel = project.entities[0]?.geometry
+    const parcel = parcelEntities[0]?.geometry
     if (parcel) {
       const bounds = getParcelBounds(parcel.vertices)
       const uncertainty = Math.max(parcel.uncertaintyMeters, 0)

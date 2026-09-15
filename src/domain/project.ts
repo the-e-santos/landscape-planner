@@ -1,4 +1,8 @@
 import type { ParcelGeometry } from './parcel'
+import {
+  createFlatTerrainEntity,
+  type TerrainEntity,
+} from './terrain'
 
 export const PROJECT_SCHEMA_VERSION = 1 as const
 
@@ -17,7 +21,7 @@ export interface ParcelEntity {
   readonly geometry: ParcelGeometry
 }
 
-export type ProjectEntity = ParcelEntity
+export type ProjectEntity = ParcelEntity | TerrainEntity
 
 export interface LandscapeProject {
   readonly schemaVersion: typeof PROJECT_SCHEMA_VERSION
@@ -53,8 +57,38 @@ export function createDefaultProject(): LandscapeProject {
           uncertaintyMeters: 0.3,
         },
       },
+      createFlatTerrainEntity({
+        eastWestMeters: 30,
+        northSouthMeters: 40,
+      }),
     ],
   }
+}
+
+export function getParcelEntity(
+  project: LandscapeProject,
+  entityId: EntityId,
+): ParcelEntity {
+  const entity = getProjectEntity(project, entityId)
+
+  if (entity.kind !== 'parcel') {
+    throw new Error(`Entity is not a parcel: ${entityId}`)
+  }
+
+  return entity
+}
+
+export function getTerrainEntity(
+  project: LandscapeProject,
+  entityId: EntityId,
+): TerrainEntity {
+  const entity = getProjectEntity(project, entityId)
+
+  if (entity.kind !== 'terrain') {
+    throw new Error(`Entity is not terrain: ${entityId}`)
+  }
+
+  return entity
 }
 
 export function getProjectEntity(

@@ -8,7 +8,7 @@ import {
 import {
   createDefaultProject,
   DEFAULT_PARCEL_ID,
-  getProjectEntity,
+  getParcelEntity,
 } from './domain/project'
 import { createProjectStore } from './domain/projectStore'
 import type { DisplayUnit } from './domain/units'
@@ -31,7 +31,7 @@ function App() {
     projectStore.subscribe,
     projectStore.getSnapshot,
   )
-  const parcel = getProjectEntity(project, DEFAULT_PARCEL_ID).geometry
+  const parcel = getParcelEntity(project, DEFAULT_PARCEL_ID).geometry
 
   const rectangleVertices = useMemo(
     () =>
