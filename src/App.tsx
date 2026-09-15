@@ -36,6 +36,7 @@ import type { DisplayUnit } from './domain/units'
 import {
   createYardScene,
   type PrimitiveManipulationMode,
+  type PrimitiveSnapSettings,
   type YardScene,
 } from './scene/createYardScene'
 import './App.css'
@@ -295,6 +296,14 @@ function App() {
   const [selectedEntityId, setSelectedEntityId] = useState<string | null>(null)
   const [manipulationMode, setManipulationMode] =
     useState<PrimitiveManipulationMode>('translate')
+  const [snapSettings, setSnapSettings] = useState<PrimitiveSnapSettings>({
+    enabled: true,
+    translationMeters: 0.25,
+    rotationRadians: Math.PI / 12,
+    resizeMeters: 0.1,
+  })
+  const [snapOverrideActive, setSnapOverrideActive] = useState(false)
+  const [resizeProportionsLocked, setResizeProportionsLocked] = useState(false)
   const [rectangle, setRectangle] = useState({
     eastWestMeters: 30,
     northSouthMeters: 40,
@@ -378,13 +387,50 @@ function App() {
   }, [manipulationMode])
 
   useEffect(() => {
+    yardSceneRef.current?.setSnapSettings({
+      ...snapSettings,
+      enabled: snapSettings.enabled !== snapOverrideActive,
+    })
+  }, [snapOverrideActive, snapSettings])
+
+  useEffect(() => {
+    yardSceneRef.current?.setResizeProportionsLocked(resizeProportionsLocked)
+  }, [resizeProportionsLocked])
+
+  useEffect(() => {
     const handleKeyDown = (event: KeyboardEvent) => {
+      if (event.key === 'Shift') {
+        setSnapOverrideActive(true)
+        return
+      }
       const target = event.target
       if (
         target instanceof HTMLInputElement ||
         target instanceof HTMLTextAreaElement ||
+        target instanceof HTMLSelectElement ||
         (target instanceof HTMLElement && target.isContentEditable)
       ) {
+        return
+      }
+      if (!event.ctrlKey && !event.metaKey && !event.altKey) {
+        const shortcutModes: Partial<Record<string, PrimitiveManipulationMode>> = {
+          w: 'translate',
+          e: 'rotate',
+          r: 'resize',
+        }
+        const shortcutMode = shortcutModes[event.key.toLowerCase()]
+        if (shortcutMode) {
+          event.preventDefault()
+          setManipulationMode(shortcutMode)
+          return
+        }
+      }
+      if (
+        (event.ctrlKey || event.metaKey) &&
+        event.key.toLowerCase() === 'y'
+      ) {
+        event.preventDefault()
+        projectStore.redo()
         return
       }
       if (!(event.ctrlKey || event.metaKey) || event.key.toLowerCase() !== 'z') {
@@ -398,8 +444,20 @@ function App() {
         projectStore.undo()
       }
     }
+    const handleKeyUp = (event: KeyboardEvent) => {
+      if (event.key === 'Shift') {
+        setSnapOverrideActive(false)
+      }
+    }
+    const handleBlur = () => setSnapOverrideActive(false)
     window.addEventListener('keydown', handleKeyDown)
-    return () => window.removeEventListener('keydown', handleKeyDown)
+    window.addEventListener('keyup', handleKeyUp)
+    window.addEventListener('blur', handleBlur)
+    return () => {
+      window.removeEventListener('keydown', handleKeyDown)
+      window.removeEventListener('keyup', handleKeyUp)
+      window.removeEventListener('blur', handleBlur)
+    }
   }, [projectStore])
 
   return (
@@ -521,6 +579,9 @@ function App() {
         canUndo={projectStore.canUndo()}
         canRedo={projectStore.canRedo()}
         manipulationMode={manipulationMode}
+        snapSettings={snapSettings}
+        snapOverrideActive={snapOverrideActive}
+        resizeProportionsLocked={resizeProportionsLocked}
         onAddPrimitive={(kind) => {
           const primitive = createUserPrimitive(kind, primitives)
           projectStore.dispatch({ type: 'primitive.add', primitive })
@@ -528,6 +589,8 @@ function App() {
         }}
         onSelect={setSelectedEntityId}
         onManipulationModeChange={setManipulationMode}
+        onSnapSettingsChange={setSnapSettings}
+        onResizeProportionsLockedChange={setResizeProportionsLocked}
         onReplace={(primitive) => projectStore.dispatch({
           type: 'primitive.replace',
           primitive,

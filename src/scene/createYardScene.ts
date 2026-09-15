@@ -5,6 +5,7 @@ import { getParcelBounds, type ParcelGeometry } from '../domain/parcel'
 import type { LandscapeProject, ParcelEntity } from '../domain/project'
 import {
   resizePrimitiveGeometry,
+  snapPrimitiveGeometryDimensions,
   type PrimitiveEntity,
 } from '../domain/primitive'
 import type { TerrainEntity } from '../domain/terrain'
@@ -79,10 +80,19 @@ export interface YardScene {
   updateProject(project: LandscapeProject): void
   setSelectedEntityId(entityId: string | null): void
   setManipulationMode(mode: PrimitiveManipulationMode): void
+  setSnapSettings(settings: PrimitiveSnapSettings): void
+  setResizeProportionsLocked(locked: boolean): void
   dispose(): void
 }
 
 export type PrimitiveManipulationMode = 'translate' | 'rotate' | 'resize'
+
+export interface PrimitiveSnapSettings {
+  readonly enabled: boolean
+  readonly translationMeters: number
+  readonly rotationRadians: number
+  readonly resizeMeters: number
+}
 
 export interface YardSceneOptions {
   readonly onSelectionChange?: (entityId: string | null) => void
@@ -173,6 +183,13 @@ export function createYardScene(
   let manipulationMode: PrimitiveManipulationMode = 'translate'
   let manipulationStartEntity: PrimitiveEntity | null = null
   let manipulating = false
+  let resizeProportionsLocked = false
+  let snapSettings: PrimitiveSnapSettings = {
+    enabled: false,
+    translationMeters: 0.25,
+    rotationRadians: Math.PI / 12,
+    resizeMeters: 0.1,
+  }
 
   const synchronizeManipulator = () => {
     const entry = selectedEntityId
@@ -343,12 +360,23 @@ export function createYardScene(
             zRadians: transformProxy.rotation.z,
           },
         }
+    const resizedGeometry = manipulationMode === 'resize'
+      ? resizePrimitiveGeometry(
+          start.geometry,
+          transformProxy.scale,
+          resizeProportionsLocked,
+        )
+      : start.geometry
     options.onPrimitiveChange?.({
       ...start,
       transform,
-      geometry: manipulationMode === 'resize'
-        ? resizePrimitiveGeometry(start.geometry, transformProxy.scale)
-        : start.geometry,
+      geometry: manipulationMode === 'resize' && snapSettings.enabled
+        ? snapPrimitiveGeometryDimensions(
+            resizedGeometry,
+            snapSettings.resizeMeters,
+            resizeProportionsLocked,
+          )
+        : resizedGeometry,
     })
   }
   const handleManipulationEnd = () => {
@@ -387,6 +415,30 @@ export function createYardScene(
       manipulationMode = mode
       transformControls.setMode(mode === 'resize' ? 'scale' : mode)
       transformControls.setSpace(mode === 'translate' ? 'world' : 'local')
+    },
+    setSnapSettings: (settings) => {
+      if (
+        !Number.isFinite(settings.translationMeters) ||
+        settings.translationMeters <= 0 ||
+        !Number.isFinite(settings.rotationRadians) ||
+        settings.rotationRadians <= 0 ||
+        !Number.isFinite(settings.resizeMeters) ||
+        settings.resizeMeters <= 0
+      ) {
+        throw new Error('Snap increments must be positive finite numbers')
+      }
+      snapSettings = { ...settings }
+      transformControls.setTranslationSnap(
+        settings.enabled ? settings.translationMeters : null,
+      )
+      transformControls.setRotationSnap(
+        settings.enabled ? settings.rotationRadians : null,
+      )
+      // Resize is snapped in physical units after shape-specific conversion.
+      transformControls.setScaleSnap(null)
+    },
+    setResizeProportionsLocked: (locked) => {
+      resizeProportionsLocked = locked
     },
     dispose: () => {
       if (manipulating) {

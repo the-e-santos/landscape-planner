@@ -21,6 +21,9 @@ cannot be the authoritative representation.
 - Store wall and fence semantics separately from their shared segment dimensions.
   Store polygon-extrusion footprint vertices in the primitive's local horizontal
   coordinate frame; triangulation is derived by the scene view.
+- Require polygon-extrusion footprints to contain at least three distinct,
+  counterclockwise vertices and no self-intersections. Invalid editor proposals
+  retain the last valid domain geometry and surface validation feedback.
 - Store the local-origin position using named `eastMeters`, `elevationMeters`,
   and `northMeters` values. Scene projection maps these to `(x, y, z)` as
   `(east, elevation, -north)`.

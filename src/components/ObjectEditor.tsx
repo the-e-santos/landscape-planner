@@ -1,10 +1,18 @@
+import { useState } from 'react'
 import type {
   PrimitiveEntity,
   PrimitiveGeometry,
 } from '../domain/primitive'
-import { getPrimitiveSolarOptics } from '../domain/primitive'
+import {
+  getPrimitiveSolarOptics,
+  insertPolygonExtrusionMidpoint,
+  validatePrimitiveEntity,
+} from '../domain/primitive'
 import type { DisplayUnit } from '../domain/units'
-import type { PrimitiveManipulationMode } from '../scene/createYardScene'
+import type {
+  PrimitiveManipulationMode,
+  PrimitiveSnapSettings,
+} from '../scene/createYardScene'
 import { LengthInput } from './LengthInput'
 
 export type PrimitiveCreationKind = PrimitiveGeometry['kind'] | 'fence'
@@ -13,10 +21,17 @@ interface AngleInputProps {
   readonly id: string
   readonly label: string
   readonly radians: number
+  readonly minRadians?: number
   readonly onChange: (radians: number) => void
 }
 
-function AngleInput({ id, label, radians, onChange }: AngleInputProps) {
+function AngleInput({
+  id,
+  label,
+  radians,
+  minRadians,
+  onChange,
+}: AngleInputProps) {
   return (
     <label className="field" htmlFor={id}>
       <span>{label}</span>
@@ -24,18 +39,96 @@ function AngleInput({ id, label, radians, onChange }: AngleInputProps) {
         <input
           id={id}
           type="number"
+          min={minRadians === undefined
+            ? undefined
+            : minRadians * 180 / Math.PI}
           step="5"
           value={Number((radians * 180 / Math.PI).toFixed(3))}
           onChange={(event) => {
             const degrees = event.currentTarget.valueAsNumber
-            if (Number.isFinite(degrees)) {
-              onChange(degrees * Math.PI / 180)
+            const nextRadians = degrees * Math.PI / 180
+            if (
+              Number.isFinite(degrees) &&
+              (minRadians === undefined || nextRadians >= minRadians)
+            ) {
+              onChange(nextRadians)
             }
           }}
         />
         <span>deg</span>
       </span>
     </label>
+  )
+}
+
+interface SnapSettingsEditorProps {
+  readonly settings: PrimitiveSnapSettings
+  readonly overrideActive: boolean
+  readonly unit: DisplayUnit
+  readonly onChange: (settings: PrimitiveSnapSettings) => void
+}
+
+function SnapSettingsEditor({
+  settings,
+  overrideActive,
+  unit,
+  onChange,
+}: SnapSettingsEditorProps) {
+  const effectiveEnabled = settings.enabled !== overrideActive
+
+  return (
+    <section className="snap-settings" aria-label="Snapping settings">
+      <label className="snap-toggle">
+        <input
+          type="checkbox"
+          checked={settings.enabled}
+          onChange={(event) => onChange({
+            ...settings,
+            enabled: event.currentTarget.checked,
+          })}
+        />
+        <span>Enable snapping</span>
+        <strong className={effectiveEnabled ? 'active' : undefined}>
+          {effectiveEnabled ? 'Active' : 'Free'}
+        </strong>
+      </label>
+      <LengthInput
+        id="translation-snap"
+        label="Move increment"
+        meters={settings.translationMeters}
+        unit={unit}
+        minMeters={0.01}
+        onChange={(translationMeters) => onChange({
+          ...settings,
+          translationMeters,
+        })}
+      />
+      <AngleInput
+        id="rotation-snap"
+        label="Rotate increment"
+        radians={settings.rotationRadians}
+        minRadians={Math.PI / 180}
+        onChange={(rotationRadians) => onChange({
+          ...settings,
+          rotationRadians,
+        })}
+      />
+      <LengthInput
+        id="resize-snap"
+        label="Resize increment"
+        meters={settings.resizeMeters}
+        unit={unit}
+        minMeters={0.01}
+        onChange={(resizeMeters) => onChange({
+          ...settings,
+          resizeMeters,
+        })}
+      />
+      <p className="field-note">
+        Hold Shift to temporarily {settings.enabled ? 'disable' : 'enable'}
+        {' '}snapping. W/E/R selects Move/Rotate/Resize.
+      </p>
+    </section>
   )
 }
 
@@ -50,8 +143,18 @@ function GeometryEditor({
   unit,
   onReplace,
 }: GeometryEditorProps) {
+  const [validationMessage, setValidationMessage] = useState<string | null>(null)
   const replaceGeometry = (geometry: PrimitiveGeometry) => {
-    onReplace({ ...primitive, geometry })
+    const replacement = { ...primitive, geometry }
+    try {
+      validatePrimitiveEntity(replacement)
+      setValidationMessage(null)
+      onReplace(replacement)
+    } catch (error) {
+      setValidationMessage(
+        error instanceof Error ? error.message : 'Primitive geometry is invalid',
+      )
+    }
   }
   const lengthField = (
     key: string,
@@ -121,12 +224,84 @@ function GeometryEditor({
 
     case 'polygonExtrusion': {
       const geometry = primitive.geometry
+      const replaceFootprint = (
+        footprint: typeof geometry.footprint,
+      ) => replaceGeometry({ ...geometry, footprint })
       return <>
         {lengthField('height', 'Height', geometry.heightMeters, (value) =>
           replaceGeometry({ ...geometry, heightMeters: value }))}
-        <p className="field-note">
-          {geometry.footprint.length}-vertex local footprint
-        </p>
+        <section className="polygon-footprint-editor" aria-label="Extrusion footprint">
+          <div className="vertex-heading">
+            <strong>Local footprint</strong>
+            <span>{geometry.footprint.length} vertices</span>
+          </div>
+          <p className="field-note">
+            Vertices connect counterclockwise. North maps to local −Z.
+          </p>
+          {validationMessage ? (
+            <p className="primitive-validation" role="alert">
+              {validationMessage}
+            </p>
+          ) : null}
+          <div className="vertex-list">
+            {geometry.footprint.map((point, index) => (
+              <div className="vertex-card" key={index}>
+                <div className="vertex-heading">
+                  <strong>Vertex {index + 1}</strong>
+                  <button
+                    className="icon-button"
+                    type="button"
+                    title={`Remove vertex ${index + 1}`}
+                    aria-label={`Remove vertex ${index + 1}`}
+                    disabled={geometry.footprint.length <= 3}
+                    onClick={() => replaceFootprint(
+                      geometry.footprint.filter(
+                        (_, pointIndex) => pointIndex !== index,
+                      ),
+                    )}
+                  >
+                    ×
+                  </button>
+                </div>
+                <LengthInput
+                  id={`${primitive.id}-footprint-${index}-east`}
+                  label="East"
+                  meters={point.eastMeters}
+                  unit={unit}
+                  onChange={(eastMeters) => replaceFootprint(
+                    geometry.footprint.map((candidate, pointIndex) =>
+                      pointIndex === index
+                        ? { ...candidate, eastMeters }
+                        : candidate,
+                    ),
+                  )}
+                />
+                <LengthInput
+                  id={`${primitive.id}-footprint-${index}-north`}
+                  label="North"
+                  meters={point.northMeters}
+                  unit={unit}
+                  onChange={(northMeters) => replaceFootprint(
+                    geometry.footprint.map((candidate, pointIndex) =>
+                      pointIndex === index
+                        ? { ...candidate, northMeters }
+                        : candidate,
+                    ),
+                  )}
+                />
+                <button
+                  className="add-point-button"
+                  type="button"
+                  onClick={() => replaceFootprint(
+                    insertPolygonExtrusionMidpoint(geometry.footprint, index),
+                  )}
+                >
+                  Add midpoint after
+                </button>
+              </div>
+            ))}
+          </div>
+        </section>
       </>
     }
 
@@ -234,11 +409,16 @@ interface ObjectEditorProps {
   readonly canUndo: boolean
   readonly canRedo: boolean
   readonly manipulationMode: PrimitiveManipulationMode
+  readonly snapSettings: PrimitiveSnapSettings
+  readonly snapOverrideActive: boolean
+  readonly resizeProportionsLocked: boolean
   readonly onAddPrimitive: (kind: PrimitiveCreationKind) => void
   readonly onSelect: (entityId: string | null) => void
   readonly onManipulationModeChange: (
     mode: PrimitiveManipulationMode,
   ) => void
+  readonly onSnapSettingsChange: (settings: PrimitiveSnapSettings) => void
+  readonly onResizeProportionsLockedChange: (locked: boolean) => void
   readonly onReplace: (primitive: PrimitiveEntity) => void
   readonly onDuplicate: (primitive: PrimitiveEntity) => void
   readonly onRemove: (entityId: string) => void
@@ -265,15 +445,21 @@ export function ObjectEditor({
   canUndo,
   canRedo,
   manipulationMode,
+  snapSettings,
+  snapOverrideActive,
+  resizeProportionsLocked,
   onAddPrimitive,
   onSelect,
   onManipulationModeChange,
+  onSnapSettingsChange,
+  onResizeProportionsLockedChange,
   onReplace,
   onDuplicate,
   onRemove,
   onUndo,
   onRedo,
 }: ObjectEditorProps) {
+  const [isCollapsed, setIsCollapsed] = useState(false)
   const selected = primitives.find(({ id }) => id === selectedEntityId)
   const replacePosition = (
     primitive: PrimitiveEntity,
@@ -299,12 +485,31 @@ export function ObjectEditor({
   })
 
   return (
-    <aside className="object-panel" aria-label="Object editor">
-      <div className="object-toolbar">
+    <aside
+      className={`object-panel${isCollapsed ? ' panel-collapsed' : ''}`}
+      aria-label="Object editor"
+    >
+      <header className="object-toolbar panel-header">
         <strong>Objects</strong>
-        <button type="button" disabled={!canUndo} onClick={onUndo}>Undo</button>
-        <button type="button" disabled={!canRedo} onClick={onRedo}>Redo</button>
-      </div>
+        <div className="panel-header-actions">
+          {!isCollapsed && (
+            <>
+              <button type="button" disabled={!canUndo} onClick={onUndo}>Undo</button>
+              <button type="button" disabled={!canRedo} onClick={onRedo}>Redo</button>
+            </>
+          )}
+          <button
+            className="panel-collapse-button"
+            type="button"
+            aria-expanded={!isCollapsed}
+            aria-controls="object-editor-content"
+            onClick={() => setIsCollapsed((collapsed) => !collapsed)}
+          >
+            {isCollapsed ? 'Expand' : 'Collapse'}
+          </button>
+        </div>
+      </header>
+      <div id="object-editor-content" hidden={isCollapsed}>
       <div className="object-create-toolbar" aria-label="Create primitive">
         {creationOptions.map(({ kind, label }) => (
           <button
@@ -348,6 +553,23 @@ export function ObjectEditor({
           </button>
         ))}
       </div>
+      <label className="proportion-lock">
+        <input
+          type="checkbox"
+          checked={resizeProportionsLocked}
+          disabled={!selected || manipulationMode !== 'resize'}
+          onChange={(event) => onResizeProportionsLockedChange(
+            event.currentTarget.checked,
+          )}
+        />
+        <span>Lock resize proportions</span>
+      </label>
+      <SnapSettingsEditor
+        settings={snapSettings}
+        overrideActive={snapOverrideActive}
+        unit={unit}
+        onChange={onSnapSettingsChange}
+      />
       {selected ? (
         <section className="object-inspector" aria-label="Selected object properties">
           <label className="field" htmlFor={`${selected.id}-name`}>
@@ -440,6 +662,7 @@ export function ObjectEditor({
           Click an object in the scene or choose one above to inspect it.
         </p>
       )}
+      </div>
     </aside>
   )
 }

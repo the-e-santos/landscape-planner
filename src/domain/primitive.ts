@@ -164,52 +164,193 @@ function dominantHorizontalScale(scale: PrimitiveScale): number {
 export function resizePrimitiveGeometry(
   geometry: PrimitiveGeometry,
   scale: PrimitiveScale,
+  preserveProportions = false,
 ): PrimitiveGeometry {
+  const effectiveScale = preserveProportions
+    ? uniformPrimitiveScale(scale)
+    : scale
   switch (geometry.kind) {
     case 'box':
       return {
         ...geometry,
-        widthMeters: scaledDimension(geometry.widthMeters, scale.x),
-        heightMeters: scaledDimension(geometry.heightMeters, scale.y),
-        depthMeters: scaledDimension(geometry.depthMeters, scale.z),
+        widthMeters: scaledDimension(geometry.widthMeters, effectiveScale.x),
+        heightMeters: scaledDimension(geometry.heightMeters, effectiveScale.y),
+        depthMeters: scaledDimension(geometry.depthMeters, effectiveScale.z),
       }
 
     case 'cylinder': {
-      const radiusScale = dominantHorizontalScale(scale)
+      const radiusScale = dominantHorizontalScale(effectiveScale)
       return {
         ...geometry,
         radiusMeters: scaledDimension(geometry.radiusMeters, radiusScale),
-        heightMeters: scaledDimension(geometry.heightMeters, scale.y),
+        heightMeters: scaledDimension(geometry.heightMeters, effectiveScale.y),
       }
     }
 
     case 'wall':
       return {
         ...geometry,
-        lengthMeters: scaledDimension(geometry.lengthMeters, scale.x),
-        heightMeters: scaledDimension(geometry.heightMeters, scale.y),
-        thicknessMeters: scaledDimension(geometry.thicknessMeters, scale.z),
+        lengthMeters: scaledDimension(geometry.lengthMeters, effectiveScale.x),
+        heightMeters: scaledDimension(geometry.heightMeters, effectiveScale.y),
+        thicknessMeters: scaledDimension(
+          geometry.thicknessMeters,
+          effectiveScale.z,
+        ),
       }
 
     case 'polygonExtrusion':
       return {
         ...geometry,
         footprint: geometry.footprint.map((point) => ({
-          eastMeters: point.eastMeters * Math.abs(scale.x),
-          northMeters: point.northMeters * Math.abs(scale.z),
+          eastMeters: point.eastMeters * Math.abs(effectiveScale.x),
+          northMeters: point.northMeters * Math.abs(effectiveScale.z),
         })),
-        heightMeters: scaledDimension(geometry.heightMeters, scale.y),
+        heightMeters: scaledDimension(geometry.heightMeters, effectiveScale.y),
       }
 
     case 'canopy':
       return {
         ...geometry,
-        eastRadiusMeters: scaledDimension(geometry.eastRadiusMeters, scale.x),
+        eastRadiusMeters: scaledDimension(
+          geometry.eastRadiusMeters,
+          effectiveScale.x,
+        ),
         verticalRadiusMeters: scaledDimension(
           geometry.verticalRadiusMeters,
-          scale.y,
+          effectiveScale.y,
         ),
-        northRadiusMeters: scaledDimension(geometry.northRadiusMeters, scale.z),
+        northRadiusMeters: scaledDimension(
+          geometry.northRadiusMeters,
+          effectiveScale.z,
+        ),
+      }
+  }
+}
+
+function uniformPrimitiveScale(scale: PrimitiveScale): PrimitiveScale {
+  const factor = [scale.x, scale.y, scale.z].reduce((dominant, candidate) =>
+    Math.abs(candidate - 1) > Math.abs(dominant - 1)
+      ? candidate
+      : dominant,
+  )
+  return { x: factor, y: factor, z: factor }
+}
+
+function snapDimension(value: number, incrementMeters: number): number {
+  if (!Number.isFinite(incrementMeters) || incrementMeters <= 0) {
+    throw new Error('Resize snap increment must be a positive finite number')
+  }
+  const snapped = Math.round(value / incrementMeters) * incrementMeters
+  return Math.max(
+    MIN_PRIMITIVE_DIMENSION_METERS,
+    Number(snapped.toPrecision(12)),
+  )
+}
+
+export function snapPrimitiveGeometryDimensions(
+  geometry: PrimitiveGeometry,
+  incrementMeters: number,
+  preserveProportions = false,
+): PrimitiveGeometry {
+  if (preserveProportions) {
+    let dimensions: readonly number[]
+    if (geometry.kind === 'polygonExtrusion') {
+      const eastValues = geometry.footprint.map(({ eastMeters }) => eastMeters)
+      const northValues = geometry.footprint.map(({ northMeters }) => northMeters)
+      dimensions = [
+        Math.max(...eastValues) - Math.min(...eastValues),
+        geometry.heightMeters,
+        Math.max(...northValues) - Math.min(...northValues),
+      ]
+    } else if (geometry.kind === 'box') {
+      dimensions = [
+        geometry.widthMeters,
+        geometry.heightMeters,
+        geometry.depthMeters,
+      ]
+    } else if (geometry.kind === 'cylinder') {
+      dimensions = [geometry.radiusMeters, geometry.heightMeters]
+    } else if (geometry.kind === 'wall') {
+      dimensions = [
+        geometry.lengthMeters,
+        geometry.heightMeters,
+        geometry.thicknessMeters,
+      ]
+    } else {
+      dimensions = [
+        geometry.eastRadiusMeters,
+        geometry.verticalRadiusMeters,
+        geometry.northRadiusMeters,
+      ]
+    }
+    const referenceDimension = Math.max(...dimensions)
+    const factor = snapDimension(referenceDimension, incrementMeters) /
+      referenceDimension
+    return resizePrimitiveGeometry(
+      geometry,
+      { x: factor, y: factor, z: factor },
+    )
+  }
+
+  switch (geometry.kind) {
+    case 'box':
+      return {
+        ...geometry,
+        widthMeters: snapDimension(geometry.widthMeters, incrementMeters),
+        heightMeters: snapDimension(geometry.heightMeters, incrementMeters),
+        depthMeters: snapDimension(geometry.depthMeters, incrementMeters),
+      }
+
+    case 'cylinder':
+      return {
+        ...geometry,
+        radiusMeters: snapDimension(geometry.radiusMeters, incrementMeters),
+        heightMeters: snapDimension(geometry.heightMeters, incrementMeters),
+      }
+
+    case 'wall':
+      return {
+        ...geometry,
+        lengthMeters: snapDimension(geometry.lengthMeters, incrementMeters),
+        heightMeters: snapDimension(geometry.heightMeters, incrementMeters),
+        thicknessMeters: snapDimension(
+          geometry.thicknessMeters,
+          incrementMeters,
+        ),
+      }
+
+    case 'polygonExtrusion': {
+      const eastValues = geometry.footprint.map(({ eastMeters }) => eastMeters)
+      const northValues = geometry.footprint.map(({ northMeters }) => northMeters)
+      const width = Math.max(...eastValues) - Math.min(...eastValues)
+      const depth = Math.max(...northValues) - Math.min(...northValues)
+      const widthScale = snapDimension(width, incrementMeters) / width
+      const depthScale = snapDimension(depth, incrementMeters) / depth
+      return {
+        ...geometry,
+        footprint: geometry.footprint.map((point) => ({
+          eastMeters: point.eastMeters * widthScale,
+          northMeters: point.northMeters * depthScale,
+        })),
+        heightMeters: snapDimension(geometry.heightMeters, incrementMeters),
+      }
+    }
+
+    case 'canopy':
+      return {
+        ...geometry,
+        eastRadiusMeters: snapDimension(
+          geometry.eastRadiusMeters,
+          incrementMeters,
+        ),
+        verticalRadiusMeters: snapDimension(
+          geometry.verticalRadiusMeters,
+          incrementMeters,
+        ),
+        northRadiusMeters: snapDimension(
+          geometry.northRadiusMeters,
+          incrementMeters,
+        ),
       }
   }
 }
@@ -222,6 +363,141 @@ function polygonSignedArea(
     return area + point.eastMeters * next.northMeters -
       next.eastMeters * point.northMeters
   }, 0) / 2
+}
+
+const POLYGON_EPSILON = 1e-9
+
+function pointsEqual(
+  first: PolygonExtrusionPoint,
+  second: PolygonExtrusionPoint,
+): boolean {
+  return Math.abs(first.eastMeters - second.eastMeters) < POLYGON_EPSILON &&
+    Math.abs(first.northMeters - second.northMeters) < POLYGON_EPSILON
+}
+
+function crossProduct(
+  start: PolygonExtrusionPoint,
+  end: PolygonExtrusionPoint,
+  point: PolygonExtrusionPoint,
+): number {
+  return (end.eastMeters - start.eastMeters) *
+    (point.northMeters - start.northMeters) -
+    (end.northMeters - start.northMeters) *
+    (point.eastMeters - start.eastMeters)
+}
+
+function pointOnSegment(
+  point: PolygonExtrusionPoint,
+  start: PolygonExtrusionPoint,
+  end: PolygonExtrusionPoint,
+): boolean {
+  return Math.abs(crossProduct(start, end, point)) < POLYGON_EPSILON &&
+    point.eastMeters >= Math.min(start.eastMeters, end.eastMeters) - POLYGON_EPSILON &&
+    point.eastMeters <= Math.max(start.eastMeters, end.eastMeters) + POLYGON_EPSILON &&
+    point.northMeters >= Math.min(start.northMeters, end.northMeters) - POLYGON_EPSILON &&
+    point.northMeters <= Math.max(start.northMeters, end.northMeters) + POLYGON_EPSILON
+}
+
+function segmentsIntersect(
+  firstStart: PolygonExtrusionPoint,
+  firstEnd: PolygonExtrusionPoint,
+  secondStart: PolygonExtrusionPoint,
+  secondEnd: PolygonExtrusionPoint,
+): boolean {
+  const firstSideStart = crossProduct(firstStart, firstEnd, secondStart)
+  const firstSideEnd = crossProduct(firstStart, firstEnd, secondEnd)
+  const secondSideStart = crossProduct(secondStart, secondEnd, firstStart)
+  const secondSideEnd = crossProduct(secondStart, secondEnd, firstEnd)
+
+  if (
+    firstSideStart * firstSideEnd < -POLYGON_EPSILON &&
+    secondSideStart * secondSideEnd < -POLYGON_EPSILON
+  ) {
+    return true
+  }
+  return pointOnSegment(secondStart, firstStart, firstEnd) ||
+    pointOnSegment(secondEnd, firstStart, firstEnd) ||
+    pointOnSegment(firstStart, secondStart, secondEnd) ||
+    pointOnSegment(firstEnd, secondStart, secondEnd)
+}
+
+function polygonSelfIntersects(
+  footprint: readonly PolygonExtrusionPoint[],
+): boolean {
+  for (let firstIndex = 0; firstIndex < footprint.length; firstIndex += 1) {
+    const firstNext = (firstIndex + 1) % footprint.length
+    for (
+      let secondIndex = firstIndex + 1;
+      secondIndex < footprint.length;
+      secondIndex += 1
+    ) {
+      const secondNext = (secondIndex + 1) % footprint.length
+      if (
+        firstIndex === secondIndex ||
+        firstNext === secondIndex ||
+        secondNext === firstIndex
+      ) {
+        continue
+      }
+      if (segmentsIntersect(
+        footprint[firstIndex],
+        footprint[firstNext],
+        footprint[secondIndex],
+        footprint[secondNext],
+      )) {
+        return true
+      }
+    }
+  }
+  return false
+}
+
+export function validatePolygonExtrusionFootprint(
+  footprint: readonly PolygonExtrusionPoint[],
+): void {
+  if (footprint.length < 3) {
+    throw new Error('Polygon extrusion footprint requires at least three vertices')
+  }
+  if (footprint.some((point) =>
+    !Number.isFinite(point.eastMeters) || !Number.isFinite(point.northMeters)
+  )) {
+    throw new Error('Polygon extrusion vertices must be finite numbers')
+  }
+  if (footprint.some((point, index) =>
+    pointsEqual(point, footprint[(index + 1) % footprint.length])
+  )) {
+    throw new Error('Polygon extrusion consecutive vertices must be distinct')
+  }
+  if (polygonSelfIntersects(footprint)) {
+    throw new Error('Polygon extrusion footprint must not self-intersect')
+  }
+  const area = polygonSignedArea(footprint)
+  if (Math.abs(area) < POLYGON_EPSILON) {
+    throw new Error('Polygon extrusion footprint must have a nonzero area')
+  }
+  if (area < 0) {
+    throw new Error('Polygon extrusion vertices must be counterclockwise')
+  }
+}
+
+export function insertPolygonExtrusionMidpoint(
+  footprint: readonly PolygonExtrusionPoint[],
+  afterIndex: number,
+): PolygonExtrusionPoint[] {
+  if (footprint.length < 2) {
+    return [...footprint]
+  }
+  const nextIndex = (afterIndex + 1) % footprint.length
+  const current = footprint[afterIndex]
+  const next = footprint[nextIndex]
+  return [
+    ...footprint.slice(0, afterIndex + 1),
+    {
+      eastMeters: (current.eastMeters + next.eastMeters) / 2,
+      northMeters: (current.northMeters + next.northMeters) / 2,
+    },
+    ...footprint.slice(afterIndex + 1),
+  ]
 }
 
 export function validatePrimitiveEntity(entity: PrimitiveEntity): void {
@@ -289,14 +565,7 @@ export function validatePrimitiveEntity(entity: PrimitiveEntity): void {
       if (entity.geometry.heightMeters <= 0) {
         throw new Error('Primitive dimensions must be greater than zero')
       }
-      if (
-        entity.geometry.footprint.length < 3 ||
-        polygonSignedArea(entity.geometry.footprint) < 1e-9
-      ) {
-        throw new Error(
-          'Polygon extrusion footprint must be counterclockwise with a nonzero area',
-        )
-      }
+      validatePolygonExtrusionFootprint(entity.geometry.footprint)
       break
 
     case 'canopy':

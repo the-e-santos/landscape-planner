@@ -543,12 +543,14 @@ Deliver:
 Deliver:
 
 - create box, cylinder, wall/fence, polygon extrusion, and canopy
+- edit polygon-extrusion footprint vertices with simple-polygon validation
 - select by clicking
 - translate, rotate, and resize
 - numeric property inspector
 - editable solar-occlusion mode and constant transmittance, kept independent
   from visual opacity
-- snapping appropriate to the current task
+- toggleable translation, rotation, and resize snapping with separate increments
+  and a temporary modifier-key override
 - undo/redo at the command level
 
 ### Milestone 6 — Save and load
