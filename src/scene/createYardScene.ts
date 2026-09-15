@@ -19,6 +19,10 @@ import {
   createPrimitiveView,
   type PrimitiveView,
 } from './createPrimitiveView'
+import {
+  generateTerrainExposureLayer,
+  type InstantSolarHeatmapSettings,
+} from '../solar/terrainExposure'
 
 interface SceneEntity {
   readonly id: string
@@ -82,6 +86,7 @@ export interface YardScene {
   setManipulationMode(mode: PrimitiveManipulationMode): void
   setSnapSettings(settings: PrimitiveSnapSettings): void
   setResizeProportionsLocked(locked: boolean): void
+  setSolarHeatmap(settings: InstantSolarHeatmapSettings): void
   dispose(): void
 }
 
@@ -190,6 +195,36 @@ export function createYardScene(
     rotationRadians: Math.PI / 12,
     resizeMeters: 0.1,
   }
+  let currentProject: LandscapeProject | undefined
+  let heatmapSettings: InstantSolarHeatmapSettings = { enabled: false }
+
+  const updateSolarHeatmap = () => {
+    if (!currentProject || !heatmapSettings.enabled || manipulating) {
+      terrainViews.forEach(({ view }) => view.setExposureLayer(null))
+      return
+    }
+    const parcel = currentProject.entities.find(
+      (entity): entity is ParcelEntity => entity.kind === 'parcel',
+    )?.geometry
+    terrainViews.forEach(({ terrain, view }) => {
+      try {
+        view.setExposureLayer(generateTerrainExposureLayer(
+          currentProject!,
+          terrain,
+          parcel,
+          heatmapSettings as Extract<
+            InstantSolarHeatmapSettings,
+            { readonly enabled: true }
+          >,
+        ))
+      } catch (error) {
+        view.setExposureLayer(null)
+        view.object.userData.exposureError = error instanceof Error
+          ? error.message
+          : 'Exposure calculation failed'
+      }
+    })
+  }
 
   const synchronizeManipulator = () => {
     const entry = selectedEntityId
@@ -212,6 +247,7 @@ export function createYardScene(
   }
 
   const updateProject = (project: LandscapeProject) => {
+    currentProject = project
     const parcelEntities = project.entities.filter(
       (entity): entity is ParcelEntity => entity.kind === 'parcel',
     )
@@ -271,6 +307,7 @@ export function createYardScene(
         project.coordinates.northRotationRadians,
       ),
     )
+    updateSolarHeatmap()
   }
 
   const handleResize = () => {
@@ -388,6 +425,7 @@ export function createYardScene(
     manipulationStartEntity = null
     transformProxy.scale.set(1, 1, 1)
     options.onManipulationEnd?.()
+    updateSolarHeatmap()
   }
   const handleDraggingChanged = (event: { value: unknown }) => {
     controls.enabled = event.value !== true
@@ -439,6 +477,10 @@ export function createYardScene(
     },
     setResizeProportionsLocked: (locked) => {
       resizeProportionsLocked = locked
+    },
+    setSolarHeatmap: (settings) => {
+      heatmapSettings = settings
+      updateSolarHeatmap()
     },
     dispose: () => {
       if (manipulating) {

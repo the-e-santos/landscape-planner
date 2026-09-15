@@ -6,6 +6,7 @@ import {
   type PrimitiveCreationKind,
 } from './components/ObjectEditor'
 import { TerrainEditor } from './components/TerrainEditor'
+import { SolarAnalysisPanel } from './components/SolarAnalysisPanel'
 import {
   createRectangleVertices,
   insertParcelMidpoint,
@@ -36,6 +37,7 @@ import {
 } from './domain/terrain'
 import { validateTerrain } from './domain/terrainValidation'
 import type { DisplayUnit } from './domain/units'
+import type { InstantSolarHeatmapSettings } from './solar/terrainExposure'
 import {
   clearProjectAutosave,
   loadProjectAutosave,
@@ -312,6 +314,8 @@ function App() {
   })
   const [snapOverrideActive, setSnapOverrideActive] = useState(false)
   const [resizeProportionsLocked, setResizeProportionsLocked] = useState(false)
+  const [solarHeatmapSettings, setSolarHeatmapSettings] =
+    useState<InstantSolarHeatmapSettings>({ enabled: false })
   const [recoveryProject, setRecoveryProject] = useState<{
     project: LandscapeProject
     savedAt: string
@@ -458,6 +462,10 @@ function App() {
   }, [resizeProportionsLocked])
 
   useEffect(() => {
+    yardSceneRef.current?.setSolarHeatmap(solarHeatmapSettings)
+  }, [solarHeatmapSettings])
+
+  useEffect(() => {
     const handleKeyDown = (event: KeyboardEvent) => {
       if (event.key === 'Shift') {
         setSnapOverrideActive(true)
@@ -566,6 +574,10 @@ function App() {
               `Could not dismiss recovery: ${error instanceof Error ? error.message : 'unknown error'}`,
             ))
         }}
+      />
+      <SolarAnalysisPanel
+        project={project}
+        onHeatmapChange={setSolarHeatmapSettings}
       />
       <ParcelEditor
         mode={mode}

@@ -32,6 +32,40 @@
   gap: 7px;
 }
 
+.persistence-drag-handle {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  margin: -3px 0 8px;
+  color: #637568;
+  font-size: 0.68rem;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+}
+
+.persistence-drag-handle span {
+  font-size: 1rem;
+  line-height: 1;
+}
+
+.panel-drag-handle {
+  cursor: grab;
+  touch-action: none;
+  user-select: none;
+}
+
+.panel-drag-handle:active {
+  cursor: grabbing;
+}
+
+.panel-drag-handle button,
+.panel-drag-handle input,
+.panel-drag-handle select,
+.panel-drag-handle a {
+  cursor: pointer;
+  user-select: auto;
+}
+
 .persistence-actions button,
 .recovery-prompt button {
   padding: 6px 9px;
@@ -82,7 +116,8 @@
 
 .parcel-panel,
 .terrain-panel,
-.object-panel {
+.object-panel,
+.solar-panel {
   position: absolute;
   top: 16px;
   width: min(340px, calc(100vw - 32px));
@@ -95,6 +130,212 @@
   background: rgb(249 250 246 / 94%);
   box-shadow: 0 12px 35px rgb(30 50 35 / 22%);
   backdrop-filter: blur(10px);
+}
+
+.solar-panel {
+  top: 100px;
+  left: 50%;
+  width: min(310px, calc(100vw - 32px));
+  max-height: calc(100vh - 116px);
+  padding: 16px;
+  transform: translateX(-50%);
+}
+
+.solar-panel .panel-header {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 12px;
+}
+
+.solar-panel h1 {
+  margin: 0;
+  font-size: 1.2rem;
+}
+
+.solar-panel .panel-intro {
+  margin: 10px 0 12px;
+  font-size: 0.76rem;
+}
+
+.solar-inputs {
+  padding-top: 5px;
+  border-top: 1px solid #d9dfd8;
+}
+
+.solar-inputs .field {
+  margin: 7px 0;
+  font-size: 0.74rem;
+}
+
+.solar-inputs input,
+.solar-vector-grid input {
+  min-width: 0;
+  box-sizing: border-box;
+  padding: 5px 6px;
+  border: 1px solid #c5cec5;
+  border-radius: 6px;
+  color: #1f2d24;
+  background: #fff;
+}
+
+.solar-inputs .field > input,
+.solar-number-input {
+  width: 142px;
+}
+
+.solar-number-input {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  gap: 5px;
+  align-items: center;
+  color: #69786e;
+  font-weight: 500;
+}
+
+.solar-number-input input {
+  width: 100%;
+}
+
+.solar-point-inputs {
+  margin-top: 12px;
+  padding-top: 10px;
+  border-top: 1px solid #d9dfd8;
+}
+
+.solar-heatmap-controls {
+  margin-top: 12px;
+  padding: 10px;
+  border: 1px solid #ccd6cd;
+  border-radius: 8px;
+  background: rgb(255 255 255 / 46%);
+}
+
+.solar-heatmap-controls .field {
+  margin: 8px 0;
+  font-size: 0.72rem;
+}
+
+.solar-heatmap-controls select {
+  width: 142px;
+  padding: 5px 6px;
+  border: 1px solid #c5cec5;
+  border-radius: 6px;
+  color: #1f2d24;
+  background: #fff;
+}
+
+.heatmap-legend {
+  display: grid;
+  grid-template-columns: auto minmax(50px, 1fr) auto;
+  gap: 7px;
+  align-items: center;
+  margin-top: 8px;
+  color: #5c6c61;
+  font-size: 0.64rem;
+}
+
+.heatmap-legend i {
+  height: 8px;
+  border-radius: 4px;
+  background: linear-gradient(90deg, #28334f, #2f8b83, #f1c75b);
+}
+
+.solar-point-inputs h2 {
+  margin: 0 0 6px;
+  font-size: 0.74rem;
+}
+
+.solar-point-inputs h2:not(:first-child) {
+  margin-top: 9px;
+}
+
+.solar-vector-grid {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 5px;
+}
+
+.solar-vector-grid label {
+  display: grid;
+  grid-template-columns: auto minmax(0, 1fr);
+  gap: 4px;
+  align-items: center;
+  color: #69786e;
+  font-size: 0.66rem;
+}
+
+.solar-vector-grid input {
+  width: 100%;
+}
+
+.solar-results {
+  margin-top: 12px;
+  padding: 10px;
+  border-radius: 9px;
+  background: #e5eee7;
+}
+
+.solar-primary-result {
+  display: flex;
+  align-items: baseline;
+  gap: 6px;
+}
+
+.solar-primary-result strong {
+  color: #173e25;
+  font-size: 1.5rem;
+}
+
+.solar-primary-result span {
+  color: #435348;
+  font-size: 0.7rem;
+  font-weight: 700;
+}
+
+.solar-results dl {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 4px 12px;
+  margin: 8px 0;
+  font-size: 0.68rem;
+}
+
+.solar-results dl div {
+  display: flex;
+  justify-content: space-between;
+}
+
+.solar-results dd {
+  margin: 0;
+  font-weight: 700;
+}
+
+.solar-method-note,
+.solar-error {
+  margin: 10px 0 0;
+  font-size: 0.66rem;
+  line-height: 1.4;
+}
+
+.solar-method-note {
+  color: #69786e;
+}
+
+.solar-error {
+  color: #9a3434;
+}
+
+.solar-panel.panel-collapsed {
+  width: auto;
+  min-width: 195px;
+  max-height: none;
+  overflow: hidden;
+  padding: 12px 14px;
+}
+
+.solar-panel.panel-collapsed .solar-panel-content {
+  display: none;
 }
 
 .object-panel {
@@ -997,6 +1238,15 @@ button:disabled {
     left: 50%;
     width: calc(100vw - 20px);
     max-height: 30vh;
+  }
+
+  .solar-panel {
+    top: 90px;
+    left: auto;
+    right: 10px;
+    width: calc(100vw - 20px);
+    max-height: 45vh;
+    transform: none;
   }
 
   .parcel-panel.panel-collapsed,

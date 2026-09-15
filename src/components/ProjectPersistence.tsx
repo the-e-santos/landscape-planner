@@ -1,6 +1,7 @@
 import { useRef, type ChangeEvent } from 'react'
 import type { LandscapeProject } from '../domain/project'
 import { serializeProject } from '../domain/projectSerialization'
+import { useDraggablePanel } from './useDraggablePanel'
 
 interface ProjectPersistenceProps {
   readonly project: LandscapeProject
@@ -39,6 +40,7 @@ export function ProjectPersistence({
   onDismissRecovery,
 }: ProjectPersistenceProps) {
   const inputRef = useRef<HTMLInputElement>(null)
+  const { panelRef, dragHandleProps } = useDraggablePanel<HTMLElement>()
   const handleFile = (event: ChangeEvent<HTMLInputElement>) => {
     const file = event.target.files?.[0]
     if (file) onLoad(file)
@@ -46,7 +48,19 @@ export function ProjectPersistence({
   }
 
   return (
-    <section className="persistence-panel" aria-label="Project save and load">
+    <section
+      ref={panelRef}
+      className="persistence-panel"
+      aria-label="Project save and load"
+    >
+      <div
+        className="persistence-drag-handle panel-drag-handle"
+        title="Drag to move project files panel"
+        {...dragHandleProps}
+      >
+        <strong>Project files</strong>
+        <span aria-hidden="true">⠿</span>
+      </div>
       <div className="persistence-actions">
         <button type="button" onClick={() => downloadProject(project)}>Download JSON</button>
         <button type="button" onClick={() => inputRef.current?.click()}>Load JSON</button>

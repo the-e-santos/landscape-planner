@@ -7,6 +7,7 @@ import {
   DEFAULT_TERRAIN_ID,
 } from '../domain/terrain'
 import { createTerrainView } from './createTerrainView'
+import type { TerrainExposureLayer } from '../solar/terrainExposure'
 
 describe('terrain scene view', () => {
   it('projects a derived terrain mesh into world coordinates', () => {
@@ -200,6 +201,38 @@ describe('terrain scene view', () => {
       expect(wall.userData.retainingWallId).toBe('wall.scene')
     }
 
+    view.dispose()
+  })
+
+  it('adds and removes a vertex-colored direct-exposure overlay', () => {
+    const terrain = createFlatTerrainEntity({
+      eastWestMeters: 2,
+      northSouthMeters: 2,
+    })
+    const view = createTerrainView(terrain)
+    const layer: TerrainExposureLayer = {
+      vertices: [
+        { eastMeters: -1, elevationMeters: 0, northMeters: -1, directIrradianceWattsPerSquareMeter: 0 },
+        { eastMeters: 1, elevationMeters: 0, northMeters: -1, directIrradianceWattsPerSquareMeter: 400 },
+        { eastMeters: 0, elevationMeters: 0, northMeters: 1, directIrradianceWattsPerSquareMeter: 800 },
+      ],
+      triangles: [[0, 1, 2]],
+      spacingMeters: 1,
+      minimumIrradianceWattsPerSquareMeter: 0,
+      maximumIrradianceWattsPerSquareMeter: 800,
+      scaleMaximumIrradianceWattsPerSquareMeter: 800,
+    }
+
+    view.setExposureLayer(layer)
+    const overlay = view.object.getObjectByName('terrain-direct-exposure')
+    expect(overlay).toBeInstanceOf(THREE.Mesh)
+    if (overlay instanceof THREE.Mesh) {
+      expect(overlay.geometry.getAttribute('color').count).toBe(3)
+      expect((overlay.material as THREE.MeshBasicMaterial).vertexColors).toBe(true)
+    }
+
+    view.setExposureLayer(null)
+    expect(view.object.getObjectByName('terrain-direct-exposure')).toBeUndefined()
     view.dispose()
   })
 })

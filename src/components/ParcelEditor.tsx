@@ -2,6 +2,7 @@ import { useState } from 'react'
 import type { ParcelPoint } from '../domain/parcel'
 import type { DisplayUnit } from '../domain/units'
 import { LengthInput } from './LengthInput'
+import { useDraggablePanel } from './useDraggablePanel'
 
 export type ParcelMode = 'rectangle' | 'polygon'
 
@@ -42,6 +43,7 @@ export function ParcelEditor({
   onUncertaintyChange,
 }: ParcelEditorProps) {
   const [isCollapsed, setIsCollapsed] = useState(false)
+  const { panelRef, dragHandleProps } = useDraggablePanel<HTMLElement>()
   const updateVertex = (
     index: number,
     field: keyof ParcelPoint,
@@ -56,10 +58,15 @@ export function ParcelEditor({
 
   return (
     <aside
+      ref={panelRef}
       className={`parcel-panel${isCollapsed ? ' panel-collapsed' : ''}`}
       aria-label="Parcel editor"
     >
-      <header className="panel-header">
+      <header
+        className="panel-header panel-drag-handle"
+        title="Drag to move parcel panel"
+        {...dragHandleProps}
+      >
         <div>
           <p className="eyebrow">Landscape planner</p>
           <h1>Parcel outline</h1>

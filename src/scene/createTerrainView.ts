@@ -8,10 +8,12 @@ import {
 import { clipTerrainMeshToParcel } from '../domain/terrainClipping'
 import { deriveRetainingWallFaces } from '../domain/retainingWallMesh'
 import { deriveTerrainMesh } from '../domain/terrainMesh'
+import type { TerrainExposureLayer } from '../solar/terrainExposure'
 
 export interface TerrainView {
   readonly object: THREE.Group
   update(entity: TerrainEntity, parcel?: ParcelGeometry): void
+  setExposureLayer(layer: TerrainExposureLayer | null): void
   dispose(): void
 }
 
@@ -28,6 +30,24 @@ export function createTerrainView(
   const object = new THREE.Group()
   let geometries = new Set<THREE.BufferGeometry>()
   let materials = new Set<THREE.Material>()
+  let exposureMesh: THREE.Mesh | undefined
+  let exposureGeometry: THREE.BufferGeometry | undefined
+  let exposureMaterial: THREE.MeshBasicMaterial | undefined
+
+  const removeExposureLayer = () => {
+    exposureMesh?.removeFromParent()
+    if (exposureGeometry) {
+      geometries.delete(exposureGeometry)
+      exposureGeometry.dispose()
+    }
+    if (exposureMaterial) {
+      materials.delete(exposureMaterial)
+      exposureMaterial.dispose()
+    }
+    exposureMesh = undefined
+    exposureGeometry = undefined
+    exposureMaterial = undefined
+  }
 
   const clear = () => {
     object.clear()
@@ -35,6 +55,65 @@ export function createTerrainView(
     materials.forEach((material) => material.dispose())
     geometries = new Set()
     materials = new Set()
+    exposureMesh = undefined
+    exposureGeometry = undefined
+    exposureMaterial = undefined
+  }
+
+  const setExposureLayer = (layer: TerrainExposureLayer | null) => {
+    removeExposureLayer()
+    object.userData.exposureLayer = layer
+    if (!layer) return
+
+    const low = new THREE.Color(0x28334f)
+    const middle = new THREE.Color(0x2f8b83)
+    const high = new THREE.Color(0xf1c75b)
+    const scaleMaximum = Math.max(
+      layer.scaleMaximumIrradianceWattsPerSquareMeter,
+      1,
+    )
+    const colors = layer.vertices.flatMap((vertex) => {
+      const ratio = Math.max(
+        0,
+        Math.min(1, vertex.directIrradianceWattsPerSquareMeter / scaleMaximum),
+      )
+      const color = ratio < 0.5
+        ? low.clone().lerp(middle, ratio * 2)
+        : middle.clone().lerp(high, (ratio - 0.5) * 2)
+      return [color.r, color.g, color.b]
+    })
+    exposureGeometry = new THREE.BufferGeometry()
+    exposureGeometry.setAttribute(
+      'position',
+      new THREE.Float32BufferAttribute(
+        layer.vertices.flatMap(
+          ({ eastMeters, elevationMeters, northMeters }) => [
+            eastMeters,
+            elevationMeters + 0.025,
+            -northMeters,
+          ],
+        ),
+        3,
+      ),
+    )
+    exposureGeometry.setAttribute(
+      'color',
+      new THREE.Float32BufferAttribute(colors, 3),
+    )
+    exposureGeometry.setIndex(layer.triangles.flatMap((triangle) => [...triangle]))
+    exposureMaterial = new THREE.MeshBasicMaterial({
+      vertexColors: true,
+      side: THREE.DoubleSide,
+      transparent: true,
+      opacity: 0.82,
+      depthWrite: false,
+    })
+    exposureMesh = new THREE.Mesh(exposureGeometry, exposureMaterial)
+    exposureMesh.name = 'terrain-direct-exposure'
+    exposureMesh.renderOrder = 1
+    geometries.add(exposureGeometry)
+    materials.add(exposureMaterial)
+    object.add(exposureMesh)
   }
 
   const update = (
@@ -223,6 +302,7 @@ export function createTerrainView(
   return {
     object,
     update,
+    setExposureLayer,
     dispose: () => {
       clear()
       object.removeFromParent()

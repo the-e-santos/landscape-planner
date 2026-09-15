@@ -15,6 +15,7 @@ import {
 } from '../domain/units'
 import { LengthInput } from './LengthInput'
 import { RetainingWallEditor } from './RetainingWallEditor'
+import { useDraggablePanel } from './useDraggablePanel'
 
 interface TerrainEditorProps {
   readonly terrain: TerrainEntity
@@ -55,6 +56,7 @@ export function TerrainEditor({
   onRemoveRetainingWall,
 }: TerrainEditorProps) {
   const [isCollapsed, setIsCollapsed] = useState(false)
+  const { panelRef, dragHandleProps } = useDraggablePanel<HTMLElement>()
   const constraints = getTerrainLinearConstraints(terrain)
   const updateSpot = <Field extends keyof SpotElevation>(
     spot: SpotElevation,
@@ -101,10 +103,15 @@ export function TerrainEditor({
 
   return (
     <aside
+      ref={panelRef}
       className={`terrain-panel${isCollapsed ? ' panel-collapsed' : ''}`}
       aria-label="Terrain editor"
     >
-      <header className="panel-header">
+      <header
+        className="panel-header panel-drag-handle"
+        title="Drag to move terrain panel"
+        {...dragHandleProps}
+      >
         <div className="section-heading">
           <div>
             <p className="eyebrow">Terrain inputs</p>

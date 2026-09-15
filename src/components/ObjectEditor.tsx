@@ -14,6 +14,7 @@ import type {
   PrimitiveSnapSettings,
 } from '../scene/createYardScene'
 import { LengthInput } from './LengthInput'
+import { useDraggablePanel } from './useDraggablePanel'
 
 export type PrimitiveCreationKind = PrimitiveGeometry['kind'] | 'fence'
 
@@ -460,6 +461,7 @@ export function ObjectEditor({
   onRedo,
 }: ObjectEditorProps) {
   const [isCollapsed, setIsCollapsed] = useState(false)
+  const { panelRef, dragHandleProps } = useDraggablePanel<HTMLElement>()
   const selected = primitives.find(({ id }) => id === selectedEntityId)
   const replacePosition = (
     primitive: PrimitiveEntity,
@@ -486,10 +488,15 @@ export function ObjectEditor({
 
   return (
     <aside
+      ref={panelRef}
       className={`object-panel${isCollapsed ? ' panel-collapsed' : ''}`}
       aria-label="Object editor"
     >
-      <header className="object-toolbar panel-header">
+      <header
+        className="object-toolbar panel-header panel-drag-handle"
+        title="Drag to move objects panel"
+        {...dragHandleProps}
+      >
         <strong>Objects</strong>
         <div className="panel-header-actions">
           {!isCollapsed && (
