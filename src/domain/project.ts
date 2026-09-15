@@ -34,6 +34,36 @@ export interface LandscapeProject {
 export const DEFAULT_PROJECT_ID = 'project.default'
 export const DEFAULT_PARCEL_ID = 'parcel.main'
 
+function createDefaultTerrainEntity(): TerrainEntity {
+  const terrain = createFlatTerrainEntity({
+    eastWestMeters: 30,
+    northSouthMeters: 40,
+    source: { kind: 'estimated', note: 'Illustrative starter terrain' },
+  })
+  const spotElevations = terrain.spotElevations.map((spot) => ({
+    ...spot,
+    elevationMeters:
+      ((spot.eastMeters + 15) / 30) * 0.25 +
+      ((spot.northMeters + 20) / 40) * 0.35,
+  }))
+
+  return {
+    ...terrain,
+    name: 'Example grade',
+    spotElevations: [
+      ...spotElevations,
+      {
+        id: `${terrain.id}.spot.rise`,
+        eastMeters: 6,
+        northMeters: 8,
+        elevationMeters: 1.5,
+        source: { kind: 'estimated', note: 'Illustrative starter terrain' },
+        uncertainty: { horizontalMeters: 0.3, verticalMeters: 0.15 },
+      },
+    ],
+  }
+}
+
 export function createDefaultProject(): LandscapeProject {
   return {
     schemaVersion: PROJECT_SCHEMA_VERSION,
@@ -57,10 +87,7 @@ export function createDefaultProject(): LandscapeProject {
           uncertaintyMeters: 0.3,
         },
       },
-      createFlatTerrainEntity({
-        eastWestMeters: 30,
-        northSouthMeters: 40,
-      }),
+      createDefaultTerrainEntity(),
     ],
   }
 }

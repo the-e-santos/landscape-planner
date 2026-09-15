@@ -2,11 +2,63 @@ import * as THREE from 'three/webgpu'
 import { OrbitControls } from 'three/addons/controls/OrbitControls.js'
 import { getParcelBounds } from '../domain/parcel'
 import type { LandscapeProject, ParcelEntity } from '../domain/project'
+import type { TerrainEntity } from '../domain/terrain'
 import {
   createParcelView,
   PARCEL_VIEW_HEIGHT,
   type ParcelView,
 } from './createParcelView'
+import { createTerrainView, type TerrainView } from './createTerrainView'
+
+interface SceneEntity {
+  readonly id: string
+}
+
+interface SceneEntityView<Entity> {
+  readonly object: THREE.Object3D
+  update(entity: Entity): void
+  dispose(): void
+}
+
+interface SceneViewEntry<Entity, View> {
+  entity: Entity
+  readonly view: View
+}
+
+function synchronizeEntityViews<
+  Entity extends SceneEntity,
+  View extends SceneEntityView<Entity>,
+>(
+  scene: THREE.Scene,
+  entries: Map<string, SceneViewEntry<Entity, View>>,
+  entities: readonly Entity[],
+  createView: (entity: Entity) => View,
+): void {
+  const activeIds = new Set(entities.map(({ id }) => id))
+
+  entries.forEach((entry, entityId) => {
+    if (!activeIds.has(entityId)) {
+      entry.view.dispose()
+      entries.delete(entityId)
+    }
+  })
+
+  entities.forEach((entity) => {
+    const existing = entries.get(entity.id)
+
+    if (existing) {
+      if (existing.entity !== entity) {
+        existing.view.update(entity)
+        existing.entity = entity
+      }
+      return
+    }
+
+    const view = createView(entity)
+    entries.set(entity.id, { entity, view })
+    scene.add(view.object)
+  })
+}
 
 export interface YardScene {
   updateProject(project: LandscapeProject): void
@@ -34,19 +86,14 @@ export function createYardScene(viewport: HTMLDivElement): YardScene {
   controls.target.set(0, 0, 0)
   controls.enableDamping = true
 
-  const groundGeometry = new THREE.PlaneGeometry(100, 100)
-  const groundMaterial = new THREE.MeshStandardMaterial({ color: 0x7fa36b })
-  const ground = new THREE.Mesh(groundGeometry, groundMaterial)
-  ground.rotation.x = -Math.PI / 2
-  scene.add(ground)
-
   const houseGeometry = new THREE.BoxGeometry(6, 3, 8)
   const houseMaterial = new THREE.MeshStandardMaterial({ color: 0xb8afa2 })
   const house = new THREE.Mesh(houseGeometry, houseMaterial)
-  house.position.set(-4, 1.5, 0)
+  house.position.set(-4, 2.2, 0)
   scene.add(house)
 
   const grid = new THREE.GridHelper(100, 100, 0x59735d, 0x6f8b72)
+  grid.position.y = 0.015
   scene.add(grid)
 
   const skyLight = new THREE.HemisphereLight(0xffffff, 0x444444, 2)
@@ -67,32 +114,29 @@ export function createYardScene(viewport: HTMLDivElement): YardScene {
   northArrow.name = 'true-north'
   scene.add(northArrow)
 
-  const parcelViews = new Map<string, ParcelView>()
+  const parcelViews = new Map<
+    string,
+    SceneViewEntry<ParcelEntity, ParcelView>
+  >()
+  const terrainViews = new Map<
+    string,
+    SceneViewEntry<TerrainEntity, TerrainView>
+  >()
 
   const updateProject = (project: LandscapeProject) => {
     const parcelEntities = project.entities.filter(
       (entity): entity is ParcelEntity => entity.kind === 'parcel',
     )
-    const activeIds = new Set(parcelEntities.map(({ id }) => id))
-
-    parcelViews.forEach((view, entityId) => {
-      if (!activeIds.has(entityId)) {
-        view.dispose()
-        parcelViews.delete(entityId)
-      }
-    })
-
-    parcelEntities.forEach((entity) => {
-      const existingView = parcelViews.get(entity.id)
-
-      if (existingView) {
-        existingView.update(entity)
-      } else {
-        const view = createParcelView(entity)
-        parcelViews.set(entity.id, view)
-        scene.add(view.object)
-      }
-    })
+    const terrainEntities = project.entities.filter(
+      (entity): entity is TerrainEntity => entity.kind === 'terrain',
+    )
+    synchronizeEntityViews(scene, parcelViews, parcelEntities, createParcelView)
+    synchronizeEntityViews(
+      scene,
+      terrainViews,
+      terrainEntities,
+      createTerrainView,
+    )
 
     const parcel = parcelEntities[0]?.geometry
     if (parcel) {
@@ -134,10 +178,10 @@ export function createYardScene(viewport: HTMLDivElement): YardScene {
       resizeObserver.disconnect()
       renderer.setAnimationLoop(null)
       controls.dispose()
-      parcelViews.forEach((view) => view.dispose())
+      parcelViews.forEach(({ view }) => view.dispose())
       parcelViews.clear()
-      groundGeometry.dispose()
-      groundMaterial.dispose()
+      terrainViews.forEach(({ view }) => view.dispose())
+      terrainViews.clear()
       houseGeometry.dispose()
       houseMaterial.dispose()
       renderer.dispose()
