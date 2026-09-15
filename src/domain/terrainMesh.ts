@@ -1,4 +1,9 @@
-import type { SpotElevation, TerrainEntity } from './terrain'
+import {
+  getTerrainLinearConstraints,
+  type SpotElevation,
+  type TerrainEntity,
+  type TerrainLinearConstraint,
+} from './terrain'
 import {
   validateTerrain,
   type TerrainValidationIssue,
@@ -25,7 +30,17 @@ export type TerrainMeshResult =
   | { readonly ok: true; readonly mesh: DerivedTerrainMesh }
   | {
       readonly ok: false
-      readonly issues: readonly TerrainValidationIssue[]
+      readonly issues: readonly TerrainMeshIssue[]
+    }
+
+export type TerrainMeshIssue =
+  | TerrainValidationIssue
+  | {
+      readonly code: 'constraint-insertion-failed'
+      readonly severity: 'error'
+      readonly message: string
+      readonly constraintIds: readonly string[]
+      readonly spotElevationIds: readonly string[]
     }
 
 interface WorkingVertex {
@@ -43,6 +58,12 @@ interface BoundaryEdge {
   readonly a: number
   readonly b: number
   count: number
+}
+
+interface MeshEdge {
+  readonly a: number
+  readonly b: number
+  readonly triangleIndices: number[]
 }
 
 function compareSpots(left: SpotElevation, right: SpotElevation): number {
@@ -143,6 +164,244 @@ function compareTriangles(
   return left[0] - right[0] || left[1] - right[1] || left[2] - right[2]
 }
 
+function edgeKey(a: number, b: number): string {
+  return `${Math.min(a, b)}:${Math.max(a, b)}`
+}
+
+function triangleEdges({ a, b, c }: WorkingTriangle) {
+  return [
+    [a, b],
+    [b, c],
+    [c, a],
+  ] as const
+}
+
+function buildMeshEdges(triangles: readonly WorkingTriangle[]): Map<string, MeshEdge> {
+  const edges = new Map<string, MeshEdge>()
+
+  triangles.forEach((triangle, triangleIndex) => {
+    triangleEdges(triangle).forEach(([a, b]) => {
+      const key = edgeKey(a, b)
+      const existing = edges.get(key)
+      if (existing) {
+        existing.triangleIndices.push(triangleIndex)
+      } else {
+        edges.set(key, { a, b, triangleIndices: [triangleIndex] })
+      }
+    })
+  })
+
+  return edges
+}
+
+function segmentsProperlyIntersect(
+  a: WorkingVertex,
+  b: WorkingVertex,
+  c: WorkingVertex,
+  d: WorkingVertex,
+): boolean {
+  const abc = signedDoubleArea(a, b, c)
+  const abd = signedDoubleArea(a, b, d)
+  const cda = signedDoubleArea(c, d, a)
+  const cdb = signedDoubleArea(c, d, b)
+
+  return (
+    ((abc > 0 && abd < 0) || (abc < 0 && abd > 0)) &&
+    ((cda > 0 && cdb < 0) || (cda < 0 && cdb > 0))
+  )
+}
+
+function oppositeVertex(
+  triangle: WorkingTriangle,
+  edgeA: number,
+  edgeB: number,
+): number {
+  return [triangle.a, triangle.b, triangle.c].find(
+    (index) => index !== edgeA && index !== edgeB,
+  )!
+}
+
+function pointParameterOnSegment(
+  point: WorkingVertex,
+  start: WorkingVertex,
+  end: WorkingVertex,
+): number {
+  const eastSpan = end.eastMeters - start.eastMeters
+  const northSpan = end.northMeters - start.northMeters
+
+  return Math.abs(eastSpan) >= Math.abs(northSpan)
+    ? (point.eastMeters - start.eastMeters) / eastSpan
+    : (point.northMeters - start.northMeters) / northSpan
+}
+
+function splitConstraintSegment(
+  startIndex: number,
+  endIndex: number,
+  vertices: readonly WorkingVertex[],
+  vertexCount: number,
+): number[] {
+  const start = vertices[startIndex]
+  const end = vertices[endIndex]
+  const interior = vertices
+    .slice(0, vertexCount)
+    .map((point, index) => ({
+      index,
+      area: signedDoubleArea(start, end, point),
+      parameter: pointParameterOnSegment(point, start, end),
+    }))
+    .filter(
+      ({ index, area, parameter }) =>
+        index !== startIndex &&
+        index !== endIndex &&
+        area === 0 &&
+        parameter > 0 &&
+        parameter < 1,
+    )
+    .sort((left, right) => left.parameter - right.parameter || left.index - right.index)
+
+  return [startIndex, ...interior.map(({ index }) => index), endIndex]
+}
+
+function insertConstraintEdge(
+  triangles: WorkingTriangle[],
+  vertices: readonly WorkingVertex[],
+  startIndex: number,
+  endIndex: number,
+  lockedEdges: ReadonlySet<string>,
+): boolean {
+  const targetKey = edgeKey(startIndex, endIndex)
+  const maximumFlips = Math.max(triangles.length * triangles.length * 2, 1)
+
+  for (let flipCount = 0; flipCount <= maximumFlips; flipCount += 1) {
+    const edges = buildMeshEdges(triangles)
+    if (edges.has(targetKey)) {
+      return true
+    }
+
+    const crossingEdges = [...edges.entries()]
+      .filter(
+        ([key, edge]) =>
+          !lockedEdges.has(key) &&
+          edge.triangleIndices.length === 2 &&
+          segmentsProperlyIntersect(
+            vertices[startIndex],
+            vertices[endIndex],
+            vertices[edge.a],
+            vertices[edge.b],
+          ),
+      )
+      .sort(([left], [right]) => (left < right ? -1 : left > right ? 1 : 0))
+
+    let flipped = false
+    for (const [, edge] of crossingEdges) {
+      const [firstTriangleIndex, secondTriangleIndex] = edge.triangleIndices
+      const firstTriangle = triangles[firstTriangleIndex]
+      const secondTriangle = triangles[secondTriangleIndex]
+      const firstOpposite = oppositeVertex(firstTriangle, edge.a, edge.b)
+      const secondOpposite = oppositeVertex(secondTriangle, edge.a, edge.b)
+
+      if (
+        !segmentsProperlyIntersect(
+          vertices[firstOpposite],
+          vertices[secondOpposite],
+          vertices[edge.a],
+          vertices[edge.b],
+        )
+      ) {
+        continue
+      }
+
+      const firstReplacement = createCounterClockwiseTriangle(
+        firstOpposite,
+        secondOpposite,
+        edge.a,
+        vertices,
+      )
+      const secondReplacement = createCounterClockwiseTriangle(
+        secondOpposite,
+        firstOpposite,
+        edge.b,
+        vertices,
+      )
+
+      if (firstReplacement && secondReplacement) {
+        triangles[firstTriangleIndex] = firstReplacement
+        triangles[secondTriangleIndex] = secondReplacement
+        flipped = true
+        break
+      }
+    }
+
+    if (!flipped) {
+      return false
+    }
+  }
+
+  return false
+}
+
+function compareConstraints(
+  left: TerrainLinearConstraint,
+  right: TerrainLinearConstraint,
+): number {
+  return left.id < right.id ? -1 : left.id > right.id ? 1 : 0
+}
+
+function enforceLinearConstraints(
+  triangles: WorkingTriangle[],
+  vertices: readonly WorkingVertex[],
+  sortedSpots: readonly SpotElevation[],
+  terrain: TerrainEntity,
+): TerrainMeshIssue | undefined {
+  const vertexBySpotId = new Map(
+    sortedSpots.map((spot, index) => [spot.id, index] as const),
+  )
+  const lockedEdges = new Set<string>()
+  const constraints = [...getTerrainLinearConstraints(terrain)].sort(
+    compareConstraints,
+  )
+
+  for (const constraint of constraints) {
+    for (let index = 0; index < constraint.spotElevationIds.length - 1; index += 1) {
+      const startId = constraint.spotElevationIds[index]
+      const endId = constraint.spotElevationIds[index + 1]
+      const startIndex = vertexBySpotId.get(startId)!
+      const endIndex = vertexBySpotId.get(endId)!
+      const chain = splitConstraintSegment(
+        startIndex,
+        endIndex,
+        vertices,
+        sortedSpots.length,
+      )
+
+      for (let chainIndex = 0; chainIndex < chain.length - 1; chainIndex += 1) {
+        const edgeStart = chain[chainIndex]
+        const edgeEnd = chain[chainIndex + 1]
+        if (
+          !insertConstraintEdge(
+            triangles,
+            vertices,
+            edgeStart,
+            edgeEnd,
+            lockedEdges,
+          )
+        ) {
+          return {
+            code: 'constraint-insertion-failed',
+            severity: 'error',
+            message: `Could not insert terrain constraint ${constraint.id}.`,
+            constraintIds: [constraint.id],
+            spotElevationIds: [startId, endId],
+          }
+        }
+        lockedEdges.add(edgeKey(edgeStart, edgeEnd))
+      }
+    }
+  }
+
+  return undefined
+}
+
 export function deriveTerrainMesh(terrain: TerrainEntity): TerrainMeshResult {
   const issues = validateTerrain(terrain)
 
@@ -218,6 +477,22 @@ export function deriveTerrainMesh(terrain: TerrainEntity): TerrainMeshResult {
     })
   })
 
+  triangles = triangles.filter(
+    ({ a, b, c }) =>
+      a < superTriangleStart &&
+      b < superTriangleStart &&
+      c < superTriangleStart,
+  )
+  const constraintIssue = enforceLinearConstraints(
+    triangles,
+    vertices,
+    sortedSpots,
+    terrain,
+  )
+  if (constraintIssue) {
+    return { ok: false, issues: [constraintIssue] }
+  }
+
   const derivedVertices = sortedSpots.map((spot) => ({
     spotElevationId: spot.id,
     eastMeters: spot.eastMeters,
@@ -225,12 +500,6 @@ export function deriveTerrainMesh(terrain: TerrainEntity): TerrainMeshResult {
     elevationMeters: spot.elevationMeters,
   }))
   const derivedTriangles = triangles
-    .filter(
-      ({ a, b, c }) =>
-        a < superTriangleStart &&
-        b < superTriangleStart &&
-        c < superTriangleStart,
-    )
     .map(rotateSmallestIndexFirst)
     .sort(compareTriangles)
 

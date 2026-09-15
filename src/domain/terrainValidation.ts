@@ -19,6 +19,7 @@ export interface TerrainValidationIssue {
     | 'insufficient-constraint-points'
     | 'missing-constraint-spot'
     | 'repeated-constraint-spot'
+    | 'intersecting-constraints'
   readonly severity: 'warning' | 'error'
   readonly message: string
   readonly spotElevationIds?: readonly string[]
@@ -49,6 +50,65 @@ function areAllCollinear(spots: readonly SpotElevation[]): boolean {
     const pointNorth = spot.northMeters - first.northMeters
     return baselineEast * pointNorth - baselineNorth * pointEast === 0
   })
+}
+
+interface ConstraintSegment {
+  readonly constraintId: string
+  readonly startId: string
+  readonly endId: string
+  readonly start: SpotElevation
+  readonly end: SpotElevation
+}
+
+function pointIsOnSegment(
+  point: SpotElevation,
+  start: SpotElevation,
+  end: SpotElevation,
+): boolean {
+  const cross =
+    (end.eastMeters - start.eastMeters) *
+      (point.northMeters - start.northMeters) -
+    (end.northMeters - start.northMeters) *
+      (point.eastMeters - start.eastMeters)
+
+  return (
+    cross === 0 &&
+    point.eastMeters >= Math.min(start.eastMeters, end.eastMeters) &&
+    point.eastMeters <= Math.max(start.eastMeters, end.eastMeters) &&
+    point.northMeters >= Math.min(start.northMeters, end.northMeters) &&
+    point.northMeters <= Math.max(start.northMeters, end.northMeters)
+  )
+}
+
+function segmentsIntersect(
+  first: ConstraintSegment,
+  second: ConstraintSegment,
+): boolean {
+  const orientation = (
+    a: SpotElevation,
+    b: SpotElevation,
+    c: SpotElevation,
+  ) =>
+    (b.eastMeters - a.eastMeters) * (c.northMeters - a.northMeters) -
+    (b.northMeters - a.northMeters) * (c.eastMeters - a.eastMeters)
+  const abc = orientation(first.start, first.end, second.start)
+  const abd = orientation(first.start, first.end, second.end)
+  const cda = orientation(second.start, second.end, first.start)
+  const cdb = orientation(second.start, second.end, first.end)
+
+  if (
+    ((abc > 0 && abd < 0) || (abc < 0 && abd > 0)) &&
+    ((cda > 0 && cdb < 0) || (cda < 0 && cdb > 0))
+  ) {
+    return true
+  }
+
+  return (
+    (abc === 0 && pointIsOnSegment(second.start, first.start, first.end)) ||
+    (abd === 0 && pointIsOnSegment(second.end, first.start, first.end)) ||
+    (cda === 0 && pointIsOnSegment(first.start, second.start, second.end)) ||
+    (cdb === 0 && pointIsOnSegment(first.end, second.start, second.end))
+  )
 }
 
 export function validateTerrain(
@@ -150,6 +210,10 @@ export function validateTerrain(
   }
 
   const constraintIds = new Set<string>()
+  const spotById = new Map(
+    terrain.spotElevations.map((spot) => [spot.id, spot] as const),
+  )
+  const constraintSegments: ConstraintSegment[] = []
   getTerrainLinearConstraints(terrain).forEach((constraint) => {
     if (constraint.id.trim().length === 0) {
       issues.push({
@@ -210,6 +274,55 @@ export function validateTerrain(
         spotElevationIds: [...repeatedIds],
       })
     }
+
+    constraint.spotElevationIds.forEach((startId, index) => {
+      const endId = constraint.spotElevationIds[index + 1]
+      const start = spotById.get(startId)
+      const end = endId === undefined ? undefined : spotById.get(endId)
+
+      if (
+        start &&
+        end &&
+        Number.isFinite(start.eastMeters) &&
+        Number.isFinite(start.northMeters) &&
+        Number.isFinite(end.eastMeters) &&
+        Number.isFinite(end.northMeters)
+      ) {
+        constraintSegments.push({
+          constraintId: constraint.id,
+          startId,
+          endId,
+          start,
+          end,
+        })
+      }
+    })
+  })
+
+  constraintSegments.forEach((first, firstIndex) => {
+    constraintSegments.slice(firstIndex + 1).forEach((second) => {
+      const sharesEndpoint =
+        first.startId === second.startId ||
+        first.startId === second.endId ||
+        first.endId === second.startId ||
+        first.endId === second.endId
+
+      if (!sharesEndpoint && segmentsIntersect(first, second)) {
+        issues.push({
+          code: 'intersecting-constraints',
+          severity: 'error',
+          message:
+            'Terrain constraints may intersect only at a shared spot elevation.',
+          constraintIds: [...new Set([first.constraintId, second.constraintId])],
+          spotElevationIds: [
+            first.startId,
+            first.endId,
+            second.startId,
+            second.endId,
+          ],
+        })
+      }
+    })
   })
 
   return issues

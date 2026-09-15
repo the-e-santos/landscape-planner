@@ -161,4 +161,36 @@ describe('terrain domain', () => {
       'repeated-constraint-spot',
     ])
   })
+
+  it('rejects crossing constraints without a shared spot', () => {
+    const spots = [
+      createSpot('spot.southwest', -1, -1),
+      createSpot('spot.southeast', 1, -1),
+      createSpot('spot.northeast', 1, 1),
+      createSpot('spot.northwest', -1, 1),
+    ]
+    const constraints: TerrainLinearConstraint[] = [
+      {
+        id: 'constraint.first',
+        name: 'First diagonal',
+        role: 'gradeBreak',
+        spotElevationIds: ['spot.southwest', 'spot.northeast'],
+        source: { kind: 'user' },
+      },
+      {
+        id: 'constraint.second',
+        name: 'Second diagonal',
+        role: 'swale',
+        spotElevationIds: ['spot.southeast', 'spot.northwest'],
+        source: { kind: 'user' },
+      },
+    ]
+
+    expect(validateTerrain(createTerrain(spots, constraints))).toEqual([
+      expect.objectContaining({
+        code: 'intersecting-constraints',
+        constraintIds: ['constraint.first', 'constraint.second'],
+      }),
+    ])
+  })
 })
