@@ -83,6 +83,9 @@ export function createTerrainView(
     const surfaceMaterial = new THREE.MeshStandardMaterial({
       color: 0x91b978,
       roughness: 0.9,
+      // Very steep valid grades should not look like missing geometry when
+      // viewed from their back side. This does not change domain geometry.
+      side: THREE.DoubleSide,
       polygonOffset: true,
       polygonOffsetFactor: 1,
       polygonOffsetUnits: 1,

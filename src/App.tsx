@@ -124,7 +124,12 @@ function createUserRetainingWall(terrain: TerrainEntity): TerrainRetainingWall {
   const averageElevation =
     elevations.reduce((sum, elevation) => sum + elevation, 0) /
     elevations.length
-  const stations = [centerEast - halfLength, centerEast + halfLength]
+  const stations = [
+    centerEast - halfLength,
+    centerEast - halfLength * 0.75,
+    centerEast + halfLength * 0.75,
+    centerEast + halfLength,
+  ]
 
   return {
     id,
@@ -133,13 +138,19 @@ function createUserRetainingWall(terrain: TerrainEntity): TerrainRetainingWall {
       id: `${id}.upper.${index + 1}`,
       eastMeters,
       northMeters: centerNorth,
-      elevationMeters: averageElevation + 0.6,
+      elevationMeters:
+        index === 0 || index === stations.length - 1
+          ? averageElevation
+          : averageElevation + 0.6,
     })),
     lowerProfile: stations.map((eastMeters, index) => ({
       id: `${id}.lower.${index + 1}`,
       eastMeters,
       northMeters: centerNorth,
-      elevationMeters: averageElevation - 0.4,
+      elevationMeters:
+        index === 0 || index === stations.length - 1
+          ? averageElevation
+          : averageElevation - 0.4,
     })),
     upperSide: 'left',
     source: { kind: 'user' },

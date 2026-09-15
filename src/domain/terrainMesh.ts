@@ -1,5 +1,6 @@
 import {
   getTerrainLinearConstraints,
+  getTerrainRetainingWalls,
   type SpotElevation,
   type TerrainEntity,
   type TerrainLinearConstraint,
@@ -12,6 +13,9 @@ import {
 export interface TerrainMeshVertex {
   /** Present when this vertex is an authoritative spot rather than a clip point. */
   readonly spotElevationId?: string
+  readonly retainingWallId?: string
+  readonly retainingWallProfilePointId?: string
+  readonly retainingWallProfile?: 'upper' | 'lower'
   readonly eastMeters: number
   readonly northMeters: number
   readonly elevationMeters: number
@@ -20,7 +24,7 @@ export interface TerrainMeshVertex {
 export type TerrainTriangle = readonly [number, number, number]
 
 export interface DerivedTerrainMesh {
-  /** Sorted by source coordinates and ID for deterministic indexing. */
+  /** Input vertices are sorted deterministically; lower wall copies follow. */
   readonly vertices: readonly TerrainMeshVertex[]
   /** Counter-clockwise in east/north coordinates, producing +Y-facing surfaces. */
   readonly triangles: readonly TerrainTriangle[]
@@ -351,17 +355,15 @@ function enforceLinearConstraints(
   triangles: WorkingTriangle[],
   vertices: readonly WorkingVertex[],
   sortedSpots: readonly SpotElevation[],
-  terrain: TerrainEntity,
+  constraints: readonly TerrainLinearConstraint[],
 ): TerrainMeshIssue | undefined {
   const vertexBySpotId = new Map(
     sortedSpots.map((spot, index) => [spot.id, index] as const),
   )
   const lockedEdges = new Set<string>()
-  const constraints = [...getTerrainLinearConstraints(terrain)].sort(
-    compareConstraints,
-  )
+  const sortedConstraints = [...constraints].sort(compareConstraints)
 
-  for (const constraint of constraints) {
+  for (const constraint of sortedConstraints) {
     for (let index = 0; index < constraint.spotElevationIds.length - 1; index += 1) {
       const startId = constraint.spotElevationIds[index]
       const endId = constraint.spotElevationIds[index + 1]
@@ -402,6 +404,130 @@ function enforceLinearConstraints(
   return undefined
 }
 
+interface WallVertexBinding {
+  readonly wallId: string
+  readonly lowerPointId: string
+  readonly lowerElevationMeters: number
+}
+
+function squaredDistanceToSegment(
+  point: WorkingVertex,
+  start: WorkingVertex,
+  end: WorkingVertex,
+): number {
+  const eastSpan = end.eastMeters - start.eastMeters
+  const northSpan = end.northMeters - start.northMeters
+  const lengthSquared = eastSpan * eastSpan + northSpan * northSpan
+  const parameter = Math.max(
+    0,
+    Math.min(
+      1,
+      ((point.eastMeters - start.eastMeters) * eastSpan +
+        (point.northMeters - start.northMeters) * northSpan) /
+        lengthSquared,
+    ),
+  )
+  const closestEast = start.eastMeters + eastSpan * parameter
+  const closestNorth = start.northMeters + northSpan * parameter
+  const eastDistance = point.eastMeters - closestEast
+  const northDistance = point.northMeters - closestNorth
+  return eastDistance * eastDistance + northDistance * northDistance
+}
+
+function snapTerrainTrianglesToRetainingWalls(
+  triangles: readonly TerrainTriangle[],
+  vertices: TerrainMeshVertex[],
+  terrain: TerrainEntity,
+  vertexByInputId: ReadonlyMap<string, number>,
+): TerrainTriangle[] {
+  let snappedTriangles = triangles.map(
+    (triangle) => [...triangle] as [number, number, number],
+  )
+
+  ;[...getTerrainRetainingWalls(terrain)]
+    .sort((left, right) =>
+      left.id < right.id ? -1 : left.id > right.id ? 1 : 0,
+    )
+    .forEach((wall) => {
+      const bindings = new Map<number, WallVertexBinding>()
+      wall.upperProfile.forEach((upper, index) => {
+        bindings.set(vertexByInputId.get(upper.id)!, {
+          wallId: wall.id,
+          lowerPointId: wall.lowerProfile[index].id,
+          lowerElevationMeters: wall.lowerProfile[index].elevationMeters,
+        })
+      })
+      const lowerVertexByUpperVertex = new Map<number, number>()
+
+      snappedTriangles = snappedTriangles.map((triangle) => {
+        if (!triangle.some((vertexIndex) => bindings.has(vertexIndex))) {
+          return triangle
+        }
+
+        const centroid = {
+          eastMeters:
+            triangle.reduce(
+              (sum, vertexIndex) => sum + vertices[vertexIndex].eastMeters,
+              0,
+            ) / 3,
+          northMeters:
+            triangle.reduce(
+              (sum, vertexIndex) => sum + vertices[vertexIndex].northMeters,
+              0,
+            ) / 3,
+        }
+        let closestSegmentIndex = 0
+        let closestDistance = Number.POSITIVE_INFINITY
+        for (let index = 0; index < wall.upperProfile.length - 1; index += 1) {
+          const distance = squaredDistanceToSegment(
+            centroid,
+            wall.upperProfile[index],
+            wall.upperProfile[index + 1],
+          )
+          if (distance < closestDistance) {
+            closestDistance = distance
+            closestSegmentIndex = index
+          }
+        }
+        const start = wall.upperProfile[closestSegmentIndex]
+        const end = wall.upperProfile[closestSegmentIndex + 1]
+        const side = signedDoubleArea(start, end, centroid)
+        const isUpperSide = wall.upperSide === 'left' ? side > 0 : side < 0
+
+        if (isUpperSide) {
+          return triangle
+        }
+
+        return triangle.map((vertexIndex) => {
+          const binding = bindings.get(vertexIndex)
+          if (!binding) {
+            return vertexIndex
+          }
+
+          const existingLowerIndex = lowerVertexByUpperVertex.get(vertexIndex)
+          if (existingLowerIndex !== undefined) {
+            return existingLowerIndex
+          }
+
+          const upperVertex = vertices[vertexIndex]
+          const lowerIndex = vertices.length
+          vertices.push({
+            eastMeters: upperVertex.eastMeters,
+            northMeters: upperVertex.northMeters,
+            elevationMeters: binding.lowerElevationMeters,
+            retainingWallId: binding.wallId,
+            retainingWallProfilePointId: binding.lowerPointId,
+            retainingWallProfile: 'lower',
+          })
+          lowerVertexByUpperVertex.set(vertexIndex, lowerIndex)
+          return lowerIndex
+        }) as [number, number, number]
+      })
+    })
+
+  return snappedTriangles
+}
+
 export function deriveTerrainMesh(terrain: TerrainEntity): TerrainMeshResult {
   const issues = validateTerrain(terrain)
 
@@ -409,7 +535,22 @@ export function deriveTerrainMesh(terrain: TerrainEntity): TerrainMeshResult {
     return { ok: false, issues }
   }
 
-  const sortedSpots = [...terrain.spotElevations].sort(compareSpots)
+  const wallPointBindings = new Map<
+    string,
+    { readonly wallId: string; readonly pointId: string }
+  >()
+  const wallSpots: SpotElevation[] = getTerrainRetainingWalls(terrain).flatMap(
+    (wall) =>
+      wall.upperProfile.map((point) => {
+        wallPointBindings.set(point.id, { wallId: wall.id, pointId: point.id })
+        return {
+          ...point,
+          source: wall.source,
+          uncertainty: wall.uncertainty,
+        }
+      }),
+  )
+  const sortedSpots = [...terrain.spotElevations, ...wallSpots].sort(compareSpots)
   const vertices: WorkingVertex[] = sortedSpots.map(
     ({ eastMeters, northMeters }) => ({ eastMeters, northMeters }),
   )
@@ -483,24 +624,50 @@ export function deriveTerrainMesh(terrain: TerrainEntity): TerrainMeshResult {
       b < superTriangleStart &&
       c < superTriangleStart,
   )
+  const wallConstraints: TerrainLinearConstraint[] = getTerrainRetainingWalls(
+    terrain,
+  ).map((wall) => ({
+    id: `retaining-wall:${wall.id}`,
+    name: wall.name,
+    role: 'gradeBreak',
+    spotElevationIds: wall.upperProfile.map(({ id }) => id),
+    source: wall.source,
+  }))
   const constraintIssue = enforceLinearConstraints(
     triangles,
     vertices,
     sortedSpots,
-    terrain,
+    [...getTerrainLinearConstraints(terrain), ...wallConstraints],
   )
   if (constraintIssue) {
     return { ok: false, issues: [constraintIssue] }
   }
 
-  const derivedVertices = sortedSpots.map((spot) => ({
-    spotElevationId: spot.id,
-    eastMeters: spot.eastMeters,
-    northMeters: spot.northMeters,
-    elevationMeters: spot.elevationMeters,
-  }))
-  const derivedTriangles = triangles
-    .map(rotateSmallestIndexFirst)
+  const derivedVertices: TerrainMeshVertex[] = sortedSpots.map((spot) => {
+    const wallBinding = wallPointBindings.get(spot.id)
+    return {
+      ...(wallBinding
+        ? {
+            retainingWallId: wallBinding.wallId,
+            retainingWallProfilePointId: wallBinding.pointId,
+            retainingWallProfile: 'upper' as const,
+          }
+        : { spotElevationId: spot.id }),
+      eastMeters: spot.eastMeters,
+      northMeters: spot.northMeters,
+      elevationMeters: spot.elevationMeters,
+    }
+  })
+  const vertexByInputId = new Map(
+    sortedSpots.map((spot, index) => [spot.id, index] as const),
+  )
+  const derivedTriangles = snapTerrainTrianglesToRetainingWalls(
+    triangles.map(rotateSmallestIndexFirst).sort(compareTriangles),
+    derivedVertices,
+    terrain,
+    vertexByInputId,
+  )
+    .map(({ 0: a, 1: b, 2: c }) => rotateSmallestIndexFirst({ a, b, c }))
     .sort(compareTriangles)
 
   return {

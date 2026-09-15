@@ -51,4 +51,37 @@ describe('retaining-wall face derivation', () => {
       },
     ])
   })
+
+  it('allows a wall to taper to zero height without a degenerate face', () => {
+    const base = createFlatTerrainEntity({
+      eastWestMeters: 10,
+      northSouthMeters: 10,
+    })
+    const terrain: TerrainEntity = {
+      ...base,
+      retainingWalls: [
+        {
+          id: 'wall.tapered',
+          name: 'Tapered wall',
+          upperProfile: [
+            { id: 'upper.1', eastMeters: -2, northMeters: 0, elevationMeters: 0 },
+            { id: 'upper.2', eastMeters: 2, northMeters: 0, elevationMeters: 2 },
+          ],
+          lowerProfile: [
+            { id: 'lower.1', eastMeters: -2, northMeters: 0, elevationMeters: 0 },
+            { id: 'lower.2', eastMeters: 2, northMeters: 0, elevationMeters: 0 },
+          ],
+          upperSide: 'left',
+          source: { kind: 'user' },
+          uncertainty: { horizontalMeters: 0.1, verticalMeters: 0.05 },
+        },
+      ],
+    }
+    const result = deriveRetainingWallFaces(terrain)
+
+    expect(result.ok).toBe(true)
+    if (result.ok) {
+      expect(result.faces[0].triangles).toEqual([[0, 3, 2]])
+    }
+  })
 })

@@ -4,6 +4,7 @@ import {
   type SpotElevation,
   type TerrainEntity,
   type TerrainLinearConstraint,
+  type TerrainRetainingWall,
 } from './terrain'
 import {
   deriveTerrainMesh,
@@ -29,6 +30,7 @@ function createSpot(
 function createTerrain(
   spotElevations: readonly SpotElevation[],
   linearConstraints: readonly TerrainLinearConstraint[] = [],
+  retainingWalls: readonly TerrainRetainingWall[] = [],
 ): TerrainEntity {
   return {
     id: 'terrain.triangulation-fixture',
@@ -36,6 +38,7 @@ function createTerrain(
     name: 'Triangulation fixture',
     spotElevations,
     linearConstraints,
+    retainingWalls,
   }
 }
 
@@ -326,5 +329,76 @@ describe('terrain mesh derivation', () => {
         byId.get('spot.northeast')!,
       ),
     ).toBe(true)
+  })
+
+  it('snaps adjoining terrain to separate upper and lower wall edges', () => {
+    const spots = [
+      createSpot('spot.southwest', -5, -5, 0),
+      createSpot('spot.southeast', 5, -5, 0),
+      createSpot('spot.northeast', 5, 5, 0),
+      createSpot('spot.northwest', -5, 5, 2),
+    ]
+    const wall: TerrainRetainingWall = {
+      id: 'wall.step',
+      name: 'Analytical step',
+      upperProfile: [
+        { id: 'wall.upper.south', eastMeters: 0, northMeters: -5, elevationMeters: 2 },
+        { id: 'wall.upper.north', eastMeters: 0, northMeters: 5, elevationMeters: 2 },
+      ],
+      lowerProfile: [
+        { id: 'wall.lower.south', eastMeters: 0, northMeters: -5, elevationMeters: 0 },
+        { id: 'wall.lower.north', eastMeters: 0, northMeters: 5, elevationMeters: 0 },
+      ],
+      upperSide: 'left',
+      source: { kind: 'survey' },
+      uncertainty: { horizontalMeters: 0.01, verticalMeters: 0.005 },
+    }
+    const result = deriveTerrainMesh(createTerrain(spots, [], [wall]))
+
+    expect(result.ok).toBe(true)
+    if (!result.ok) {
+      return
+    }
+
+    const upper = result.mesh.vertices
+      .map((vertex, index) => ({ vertex, index }))
+      .filter(({ vertex }) =>
+        vertex.retainingWallId === wall.id && vertex.retainingWallProfile === 'upper',
+      )
+    const lower = result.mesh.vertices
+      .map((vertex, index) => ({ vertex, index }))
+      .filter(({ vertex }) =>
+        vertex.retainingWallId === wall.id && vertex.retainingWallProfile === 'lower',
+      )
+
+    expect(upper).toHaveLength(2)
+    expect(lower).toHaveLength(2)
+    expect(upper.map(({ vertex }) => vertex.elevationMeters)).toEqual([2, 2])
+    expect(lower.map(({ vertex }) => vertex.elevationMeters)).toEqual([0, 0])
+    expect(meshHasEdge(result.mesh.triangles, upper[0].index, upper[1].index)).toBe(
+      true,
+    )
+    expect(meshHasEdge(result.mesh.triangles, lower[0].index, lower[1].index)).toBe(
+      true,
+    )
+
+    const wallVertexIndices = new Set([
+      ...upper.map(({ index }) => index),
+      ...lower.map(({ index }) => index),
+    ])
+    result.mesh.triangles.forEach((triangle) => {
+      const profile = triangle
+        .map((index) => result.mesh.vertices[index].retainingWallProfile)
+        .find((value) => value !== undefined)
+      const nonWallVertex = triangle
+        .filter((index) => !wallVertexIndices.has(index))
+        .map((index) => result.mesh.vertices[index])[0]
+      if (profile === 'upper' && nonWallVertex) {
+        expect(nonWallVertex.eastMeters).toBeLessThan(0)
+      }
+      if (profile === 'lower' && nonWallVertex) {
+        expect(nonWallVertex.eastMeters).toBeGreaterThan(0)
+      }
+    })
   })
 })

@@ -26,6 +26,9 @@ describe('terrain scene view', () => {
     const position = surface.geometry.getAttribute('position')
     expect(position.count).toBe(4)
     expect(surface.geometry.index?.count).toBe(6)
+    expect((surface.material as THREE.MeshStandardMaterial).side).toBe(
+      THREE.DoubleSide,
+    )
     expect([position.getX(0), position.getY(0), position.getZ(0)]).toEqual([
       -10,
       2.5,

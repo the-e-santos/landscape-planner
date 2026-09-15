@@ -31,6 +31,31 @@ function toVertex(point: RetainingWallProfilePoint): TerrainMeshVertex {
   }
 }
 
+function triangleHasArea(
+  vertices: readonly TerrainMeshVertex[],
+  [aIndex, bIndex, cIndex]: TerrainTriangle,
+): boolean {
+  const a = vertices[aIndex]
+  const b = vertices[bIndex]
+  const c = vertices[cIndex]
+  const ab = [
+    b.eastMeters - a.eastMeters,
+    b.elevationMeters - a.elevationMeters,
+    b.northMeters - a.northMeters,
+  ]
+  const ac = [
+    c.eastMeters - a.eastMeters,
+    c.elevationMeters - a.elevationMeters,
+    c.northMeters - a.northMeters,
+  ]
+  const cross = [
+    ab[1] * ac[2] - ab[2] * ac[1],
+    ab[2] * ac[0] - ab[0] * ac[2],
+    ab[0] * ac[1] - ab[1] * ac[0],
+  ]
+  return cross.some((component) => component !== 0)
+}
+
 export function deriveRetainingWallFaces(
   terrain: TerrainEntity,
 ): RetainingWallMeshResult {
@@ -51,9 +76,12 @@ export function deriveRetainingWallFaces(
       const lowerStart = upperStart + 1
       const upperEnd = upperStart + 2
       const lowerEnd = upperStart + 3
-      triangles.push(
+      const candidates: TerrainTriangle[] = [
         [upperStart, lowerStart, lowerEnd],
         [upperStart, lowerEnd, upperEnd],
+      ]
+      triangles.push(
+        ...candidates.filter((triangle) => triangleHasArea(vertices, triangle)),
       )
     }
 

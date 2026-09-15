@@ -31,6 +31,11 @@ export interface TerrainValidationIssue {
     | 'invalid-retaining-wall-height'
     | 'invalid-retaining-wall-segment'
     | 'invalid-retaining-wall-uncertainty'
+    | 'retaining-wall-point-id-conflict'
+    | 'retaining-wall-position-conflict'
+    | 'retaining-wall-segment-point-conflict'
+    | 'intersecting-retaining-wall-constraint'
+    | 'intersecting-retaining-walls'
   readonly severity: 'warning' | 'error'
   readonly message: string
   readonly spotElevationIds?: readonly string[]
@@ -38,7 +43,12 @@ export interface TerrainValidationIssue {
   readonly retainingWallIds?: readonly string[]
 }
 
-function positionKey(spot: SpotElevation): string {
+interface PlanPoint {
+  readonly eastMeters: number
+  readonly northMeters: number
+}
+
+function positionKey(spot: PlanPoint): string {
   return `${spot.eastMeters}\u0000${spot.northMeters}`
 }
 
@@ -64,7 +74,12 @@ function areAllCollinear(spots: readonly SpotElevation[]): boolean {
   })
 }
 
-interface ConstraintSegment {
+interface PlanSegment {
+  readonly start: PlanPoint
+  readonly end: PlanPoint
+}
+
+interface ConstraintSegment extends PlanSegment {
   readonly constraintId: string
   readonly startId: string
   readonly endId: string
@@ -72,10 +87,17 @@ interface ConstraintSegment {
   readonly end: SpotElevation
 }
 
+interface WallSegment extends PlanSegment {
+  readonly retainingWallId: string
+  readonly segmentIndex: number
+  readonly start: PlanPoint
+  readonly end: PlanPoint
+}
+
 function pointIsOnSegment(
-  point: SpotElevation,
-  start: SpotElevation,
-  end: SpotElevation,
+  point: PlanPoint,
+  start: PlanPoint,
+  end: PlanPoint,
 ): boolean {
   const cross =
     (end.eastMeters - start.eastMeters) *
@@ -93,13 +115,13 @@ function pointIsOnSegment(
 }
 
 function segmentsIntersect(
-  first: ConstraintSegment,
-  second: ConstraintSegment,
+  first: PlanSegment,
+  second: PlanSegment,
 ): boolean {
   const orientation = (
-    a: SpotElevation,
-    b: SpotElevation,
-    c: SpotElevation,
+    a: PlanPoint,
+    b: PlanPoint,
+    c: PlanPoint,
   ) =>
     (b.eastMeters - a.eastMeters) * (c.northMeters - a.northMeters) -
     (b.northMeters - a.northMeters) * (c.eastMeters - a.eastMeters)
@@ -338,6 +360,11 @@ export function validateTerrain(
   })
 
   const retainingWallIds = new Set<string>()
+  const terrainSpotIds = new Set(ids)
+  const terrainPositions = new Map(positions)
+  const retainingWallPointIds = new Set<string>()
+  const retainingWallPositions = new Map<string, string>()
+  const retainingWallSegments: WallSegment[] = []
   getTerrainRetainingWalls(terrain).forEach((wall) => {
     if (wall.id.trim().length === 0) {
       issues.push({
@@ -423,6 +450,48 @@ export function validateTerrain(
       })
     }
 
+    const conflictingPointIds = new Set<string>()
+    profilePoints.forEach((point) => {
+      if (terrainSpotIds.has(point.id) || retainingWallPointIds.has(point.id)) {
+        conflictingPointIds.add(point.id)
+      }
+      retainingWallPointIds.add(point.id)
+    })
+    if (conflictingPointIds.size > 0) {
+      issues.push({
+        code: 'retaining-wall-point-id-conflict',
+        severity: 'error',
+        message: `Retaining wall ${wall.id} profile point IDs must be unique across the terrain.`,
+        retainingWallIds: [wall.id],
+        spotElevationIds: [...conflictingPointIds],
+      })
+    }
+
+    const conflictingPositions = new Set<string>()
+    wall.upperProfile.forEach((point) => {
+      if (!Number.isFinite(point.eastMeters) || !Number.isFinite(point.northMeters)) {
+        return
+      }
+      const key = positionKey(point)
+      const existingId =
+        terrainPositions.get(key) ?? retainingWallPositions.get(key)
+      if (existingId !== undefined) {
+        conflictingPositions.add(existingId)
+        conflictingPositions.add(point.id)
+      } else {
+        retainingWallPositions.set(key, point.id)
+      }
+    })
+    if (conflictingPositions.size > 0) {
+      issues.push({
+        code: 'retaining-wall-position-conflict',
+        severity: 'error',
+        message: `Retaining wall ${wall.id} stations cannot share plan positions with terrain spots or other walls.`,
+        retainingWallIds: [wall.id],
+        spotElevationIds: [...conflictingPositions],
+      })
+    }
+
     if (wall.upperProfile.length === wall.lowerProfile.length) {
       const profilesAreMisaligned = wall.upperProfile.some((upper, index) => {
         const lower = wall.lowerProfile[index]
@@ -440,17 +509,23 @@ export function validateTerrain(
         })
       }
 
-      const hasInvalidHeight = wall.upperProfile.some(
+      const hasInvertedHeight = wall.upperProfile.some(
         (upper, index) =>
           Number.isFinite(upper.elevationMeters) &&
           Number.isFinite(wall.lowerProfile[index].elevationMeters) &&
-          upper.elevationMeters <= wall.lowerProfile[index].elevationMeters,
+          upper.elevationMeters < wall.lowerProfile[index].elevationMeters,
       )
-      if (hasInvalidHeight) {
+      const hasPositiveHeight = wall.upperProfile.some(
+        (upper, index) =>
+          Number.isFinite(upper.elevationMeters) &&
+          Number.isFinite(wall.lowerProfile[index].elevationMeters) &&
+          upper.elevationMeters > wall.lowerProfile[index].elevationMeters,
+      )
+      if (hasInvertedHeight || !hasPositiveHeight) {
         issues.push({
           code: 'invalid-retaining-wall-height',
           severity: 'error',
-          message: `Retaining wall ${wall.id} upper elevations must be above corresponding lower elevations.`,
+          message: `Retaining wall ${wall.id} upper elevations must stay at or above the lower profile and differ somewhere.`,
           retainingWallIds: [wall.id],
         })
       }
@@ -471,7 +546,68 @@ export function validateTerrain(
           retainingWallIds: [wall.id],
         })
       }
+
+      const spotsOnWall = new Set<string>()
+      wall.upperProfile.forEach((start, index) => {
+        const end = wall.upperProfile[index + 1]
+        if (!end) {
+          return
+        }
+        retainingWallSegments.push({
+          retainingWallId: wall.id,
+          segmentIndex: index,
+          start,
+          end,
+        })
+        terrain.spotElevations.forEach((spot) => {
+          if (pointIsOnSegment(spot, start, end)) {
+            spotsOnWall.add(spot.id)
+          }
+        })
+      })
+      if (spotsOnWall.size > 0) {
+        issues.push({
+          code: 'retaining-wall-segment-point-conflict',
+          severity: 'error',
+          message: `Retaining wall ${wall.id} cannot pass through an ordinary terrain spot.`,
+          retainingWallIds: [wall.id],
+          spotElevationIds: [...spotsOnWall],
+        })
+      }
     }
+  })
+
+  retainingWallSegments.forEach((wallSegment) => {
+    constraintSegments.forEach((constraintSegment) => {
+      if (segmentsIntersect(wallSegment, constraintSegment)) {
+        issues.push({
+          code: 'intersecting-retaining-wall-constraint',
+          severity: 'error',
+          message:
+            'A retaining wall and terrain line cannot cross or overlap.',
+          retainingWallIds: [wallSegment.retainingWallId],
+          constraintIds: [constraintSegment.constraintId],
+        })
+      }
+    })
+  })
+
+  retainingWallSegments.forEach((first, firstIndex) => {
+    retainingWallSegments.slice(firstIndex + 1).forEach((second) => {
+      const adjacentSegments =
+        first.retainingWallId === second.retainingWallId &&
+        Math.abs(first.segmentIndex - second.segmentIndex) === 1
+      if (!adjacentSegments && segmentsIntersect(first, second)) {
+        issues.push({
+          code: 'intersecting-retaining-walls',
+          severity: 'error',
+          message: 'Retaining-wall profiles cannot cross or overlap.',
+          retainingWallIds: [
+            ...new Set([first.retainingWallId, second.retainingWallId]),
+          ],
+        })
+      }
+    })
   })
 
   return issues
