@@ -2,6 +2,7 @@ import * as THREE from 'three/webgpu'
 import { OrbitControls } from 'three/addons/controls/OrbitControls.js'
 import { getParcelBounds, type ParcelGeometry } from '../domain/parcel'
 import type { LandscapeProject, ParcelEntity } from '../domain/project'
+import type { PrimitiveEntity } from '../domain/primitive'
 import type { TerrainEntity } from '../domain/terrain'
 import {
   createParcelView,
@@ -9,6 +10,10 @@ import {
   type ParcelView,
 } from './createParcelView'
 import { createTerrainView, type TerrainView } from './createTerrainView'
+import {
+  createPrimitiveView,
+  type PrimitiveView,
+} from './createPrimitiveView'
 
 interface SceneEntity {
   readonly id: string
@@ -92,12 +97,6 @@ export function createYardScene(viewport: HTMLDivElement): YardScene {
   controls.target.set(0, 0, 0)
   controls.enableDamping = true
 
-  const houseGeometry = new THREE.BoxGeometry(6, 3, 8)
-  const houseMaterial = new THREE.MeshStandardMaterial({ color: 0xb8afa2 })
-  const house = new THREE.Mesh(houseGeometry, houseMaterial)
-  house.position.set(-4, 2.2, 0)
-  scene.add(house)
-
   const grid = new THREE.GridHelper(100, 100, 0x59735d, 0x6f8b72)
   grid.position.y = 0.015
   scene.add(grid)
@@ -128,6 +127,10 @@ export function createYardScene(viewport: HTMLDivElement): YardScene {
     string,
     TerrainViewEntry
   >()
+  const primitiveViews = new Map<
+    string,
+    SceneViewEntry<PrimitiveEntity, PrimitiveView>
+  >()
 
   const updateProject = (project: LandscapeProject) => {
     const parcelEntities = project.entities.filter(
@@ -136,8 +139,17 @@ export function createYardScene(viewport: HTMLDivElement): YardScene {
     const terrainEntities = project.entities.filter(
       (entity): entity is TerrainEntity => entity.kind === 'terrain',
     )
+    const primitiveEntities = project.entities.filter(
+      (entity): entity is PrimitiveEntity => entity.kind === 'primitive',
+    )
     const parcel = parcelEntities[0]?.geometry
     synchronizeEntityViews(scene, parcelViews, parcelEntities, createParcelView)
+    synchronizeEntityViews(
+      scene,
+      primitiveViews,
+      primitiveEntities,
+      createPrimitiveView,
+    )
     const activeTerrainIds = new Set(terrainEntities.map(({ id }) => id))
     terrainViews.forEach((entry, entityId) => {
       if (!activeTerrainIds.has(entityId)) {
@@ -203,8 +215,8 @@ export function createYardScene(viewport: HTMLDivElement): YardScene {
       parcelViews.clear()
       terrainViews.forEach(({ view }) => view.dispose())
       terrainViews.clear()
-      houseGeometry.dispose()
-      houseMaterial.dispose()
+      primitiveViews.forEach(({ view }) => view.dispose())
+      primitiveViews.clear()
       renderer.dispose()
       renderer.domElement.remove()
     },

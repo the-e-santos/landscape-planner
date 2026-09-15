@@ -1,5 +1,9 @@
 import type { ParcelGeometry } from './parcel'
 import {
+  createDefaultHouseEntity,
+  type PrimitiveEntity,
+} from './primitive'
+import {
   createFlatTerrainEntity,
   type TerrainEntity,
 } from './terrain'
@@ -21,7 +25,7 @@ export interface ParcelEntity {
   readonly geometry: ParcelGeometry
 }
 
-export type ProjectEntity = ParcelEntity | TerrainEntity
+export type ProjectEntity = ParcelEntity | TerrainEntity | PrimitiveEntity
 
 export interface LandscapeProject {
   readonly schemaVersion: typeof PROJECT_SCHEMA_VERSION
@@ -88,8 +92,22 @@ export function createDefaultProject(): LandscapeProject {
         },
       },
       createDefaultTerrainEntity(),
+      createDefaultHouseEntity(),
     ],
   }
+}
+
+export function getPrimitiveEntity(
+  project: LandscapeProject,
+  entityId: EntityId,
+): PrimitiveEntity {
+  const entity = getProjectEntity(project, entityId)
+
+  if (entity.kind !== 'primitive') {
+    throw new Error(`Entity is not a primitive: ${entityId}`)
+  }
+
+  return entity
 }
 
 export function getParcelEntity(

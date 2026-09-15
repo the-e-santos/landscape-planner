@@ -1,5 +1,6 @@
 import { useEffect, useMemo, useRef, useState, useSyncExternalStore } from 'react'
 import { ParcelEditor, type ParcelMode } from './components/ParcelEditor'
+import { ObjectEditor } from './components/ObjectEditor'
 import { TerrainEditor } from './components/TerrainEditor'
 import {
   createRectangleVertices,
@@ -13,6 +14,7 @@ import {
   getTerrainEntity,
 } from './domain/project'
 import { createProjectStore } from './domain/projectStore'
+import type { PrimitiveEntity } from './domain/primitive'
 import {
   DEFAULT_TERRAIN_ID,
   getTerrainLinearConstraints,
@@ -158,6 +160,36 @@ function createUserRetainingWall(terrain: TerrainEntity): TerrainRetainingWall {
   }
 }
 
+function createUserBox(primitives: readonly PrimitiveEntity[]): PrimitiveEntity {
+  const usedIds = new Set(primitives.map(({ id }) => id))
+  let sequence = 1
+  let id = `primitive.box.user-${sequence}`
+  while (usedIds.has(id)) {
+    sequence += 1
+    id = `primitive.box.user-${sequence}`
+  }
+
+  return {
+    id,
+    kind: 'primitive',
+    name: `Box ${sequence}`,
+    transform: {
+      position: {
+        eastMeters: sequence * 2,
+        elevationMeters: 0.5,
+        northMeters: 0,
+      },
+      rotation: { xRadians: 0, yRadians: 0, zRadians: 0 },
+    },
+    geometry: {
+      kind: 'box',
+      widthMeters: 1,
+      heightMeters: 1,
+      depthMeters: 1,
+    },
+  }
+}
+
 function App() {
   const viewportRef = useRef<HTMLDivElement>(null)
   const yardSceneRef = useRef<YardScene | null>(null)
@@ -176,6 +208,9 @@ function App() {
   )
   const parcel = getParcelEntity(project, DEFAULT_PARCEL_ID).geometry
   const terrain = getTerrainEntity(project, DEFAULT_TERRAIN_ID)
+  const primitives = project.entities.filter(
+    (entity): entity is PrimitiveEntity => entity.kind === 'primitive',
+  )
   const terrainIssues = validateTerrain(terrain)
 
   const rectangleVertices = useMemo(
@@ -216,6 +251,23 @@ function App() {
   useEffect(() => {
     yardSceneRef.current?.updateProject(project)
   }, [project])
+
+  useEffect(() => {
+    const handleKeyDown = (event: KeyboardEvent) => {
+      if (!(event.ctrlKey || event.metaKey) || event.key.toLowerCase() !== 'z') {
+        return
+      }
+
+      event.preventDefault()
+      if (event.shiftKey) {
+        projectStore.redo()
+      } else {
+        projectStore.undo()
+      }
+    }
+    window.addEventListener('keydown', handleKeyDown)
+    return () => window.removeEventListener('keydown', handleKeyDown)
+  }, [projectStore])
 
   return (
     <main className="app-shell">
@@ -328,6 +380,26 @@ function App() {
             retainingWallId,
           })
         }
+      />
+      <ObjectEditor
+        primitives={primitives}
+        unit={unit}
+        canUndo={projectStore.canUndo()}
+        canRedo={projectStore.canRedo()}
+        onAddBox={() => projectStore.dispatch({
+          type: 'primitive.add',
+          primitive: createUserBox(primitives),
+        })}
+        onReplace={(primitive) => projectStore.dispatch({
+          type: 'primitive.replace',
+          primitive,
+        })}
+        onRemove={(entityId) => projectStore.dispatch({
+          type: 'primitive.remove',
+          entityId,
+        })}
+        onUndo={projectStore.undo}
+        onRedo={projectStore.redo}
       />
     </main>
   )

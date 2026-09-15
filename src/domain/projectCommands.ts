@@ -1,6 +1,11 @@
 import type { ParcelGeometry } from './parcel'
 import type { EntityId, LandscapeProject, ProjectEntity } from './project'
 import {
+  clonePrimitiveEntity,
+  validatePrimitiveEntity,
+  type PrimitiveEntity,
+} from './primitive'
+import {
   getTerrainLinearConstraints,
   getTerrainRetainingWalls,
   type SpotElevation,
@@ -18,6 +23,18 @@ export type ProjectCommand =
   | {
       readonly type: 'project.northRotation.set'
       readonly northRotationRadians: number
+    }
+  | {
+      readonly type: 'primitive.add'
+      readonly primitive: PrimitiveEntity
+    }
+  | {
+      readonly type: 'primitive.replace'
+      readonly primitive: PrimitiveEntity
+    }
+  | {
+      readonly type: 'primitive.remove'
+      readonly entityId: EntityId
     }
   | {
       readonly type: 'terrain.spotElevation.add'
@@ -162,6 +179,43 @@ export function applyProjectCommand(
           ...project.coordinates,
           northRotationRadians: command.northRotationRadians,
         },
+      }
+
+    case 'primitive.add':
+      validatePrimitiveEntity(command.primitive)
+      if (project.entities.some(({ id }) => id === command.primitive.id)) {
+        throw new Error(`Project entity already exists: ${command.primitive.id}`)
+      }
+
+      return {
+        ...project,
+        entities: [...project.entities, clonePrimitiveEntity(command.primitive)],
+      }
+
+    case 'primitive.replace':
+      validatePrimitiveEntity(command.primitive)
+      return replaceEntity(project, command.primitive.id, (entity) => {
+        if (entity.kind !== 'primitive') {
+          throw new Error(`Entity is not a primitive: ${command.primitive.id}`)
+        }
+
+        return clonePrimitiveEntity(command.primitive)
+      })
+
+    case 'primitive.remove':
+      if (!project.entities.some(({ id }) => id === command.entityId)) {
+        throw new Error(`Project entity not found: ${command.entityId}`)
+      }
+      if (
+        project.entities.find(({ id }) => id === command.entityId)?.kind !==
+        'primitive'
+      ) {
+        throw new Error(`Entity is not a primitive: ${command.entityId}`)
+      }
+
+      return {
+        ...project,
+        entities: project.entities.filter(({ id }) => id !== command.entityId),
       }
 
     case 'terrain.spotElevation.add':

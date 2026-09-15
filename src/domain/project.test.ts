@@ -4,6 +4,7 @@ import {
   createDefaultProject,
   DEFAULT_PARCEL_ID,
   getParcelEntity,
+  getPrimitiveEntity,
   getTerrainEntity,
 } from './project'
 import { applyProjectCommand } from './projectCommands'
@@ -12,6 +13,7 @@ import {
   serializeProject,
 } from './projectSerialization'
 import { createProjectStore } from './projectStore'
+import { DEFAULT_HOUSE_ID, type PrimitiveEntity } from './primitive'
 import {
   DEFAULT_TERRAIN_ID,
   type SpotElevation,
@@ -71,6 +73,12 @@ describe('project model', () => {
     })
 
     expect(deserializeProject(serializeProject(project))).toEqual(project)
+    expect(
+      getPrimitiveEntity(
+        deserializeProject(serializeProject(project)),
+        DEFAULT_HOUSE_ID,
+      ).geometry.kind,
+    ).toBe('box')
   })
 
   it('rejects JSON with an unsupported schema version', () => {
@@ -244,5 +252,70 @@ describe('project model', () => {
     )
 
     unsubscribe()
+  })
+
+  it('adds, replaces, and removes a primitive by stable ID', () => {
+    const original = createDefaultProject()
+    const primitive: PrimitiveEntity = {
+      id: 'primitive.box.test',
+      kind: 'primitive',
+      name: 'Test box',
+      transform: {
+        position: { eastMeters: 1, elevationMeters: 0.5, northMeters: 2 },
+        rotation: { xRadians: 0, yRadians: 0.25, zRadians: 0 },
+      },
+      geometry: {
+        kind: 'box',
+        widthMeters: 1,
+        heightMeters: 1,
+        depthMeters: 2,
+      },
+    }
+    const withPrimitive = applyProjectCommand(original, {
+      type: 'primitive.add',
+      primitive,
+    })
+    const replacement = {
+      ...primitive,
+      geometry: { ...primitive.geometry, widthMeters: 3 },
+    }
+    const withReplacement = applyProjectCommand(withPrimitive, {
+      type: 'primitive.replace',
+      primitive: replacement,
+    })
+    const withoutPrimitive = applyProjectCommand(withReplacement, {
+      type: 'primitive.remove',
+      entityId: primitive.id,
+    })
+
+    expect(getPrimitiveEntity(withPrimitive, primitive.id)).toEqual(primitive)
+    expect(getPrimitiveEntity(withReplacement, primitive.id)).toEqual(replacement)
+    expect(withoutPrimitive.entities.some(({ id }) => id === primitive.id)).toBe(false)
+    expect(() => applyProjectCommand(original, {
+      type: 'primitive.add',
+      primitive: { ...primitive, geometry: { ...primitive.geometry, heightMeters: 0 } },
+    })).toThrow('Primitive dimensions must be greater than zero')
+  })
+
+  it('undoes and redoes commands while clearing stale redo history', () => {
+    const store = createProjectStore(createDefaultProject())
+    store.dispatch({
+      type: 'project.northRotation.set',
+      northRotationRadians: 0.5,
+    })
+
+    expect(store.canUndo()).toBe(true)
+    store.undo()
+    expect(store.getSnapshot().coordinates.northRotationRadians).toBe(0)
+    expect(store.canRedo()).toBe(true)
+    store.redo()
+    expect(store.getSnapshot().coordinates.northRotationRadians).toBe(0.5)
+
+    store.undo()
+    store.dispatch({
+      type: 'project.northRotation.set',
+      northRotationRadians: 0.75,
+    })
+    expect(store.canRedo()).toBe(false)
   })
 })
