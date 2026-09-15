@@ -97,6 +97,39 @@ describe('project model', () => {
     ).toThrow('Unsupported project schema version')
   })
 
+  it('reports the path to invalid project data', () => {
+    const project = createDefaultProject()
+    const house = getPrimitiveEntity(project, DEFAULT_HOUSE_ID)
+    const invalid = {
+      ...project,
+      entities: project.entities.map((entity) => entity.id === DEFAULT_HOUSE_ID
+        ? { ...house, geometry: { ...house.geometry, heightMeters: -1 } }
+        : entity),
+    }
+
+    expect(() => deserializeProject(JSON.stringify(invalid))).toThrow(
+      'project.entities[2]: Primitive dimensions must be greater than zero',
+    )
+  })
+
+  it('rejects duplicate entity IDs and missing app foundations', () => {
+    const project = createDefaultProject()
+    expect(() => deserializeProject(JSON.stringify({
+      ...project,
+      entities: [...project.entities, project.entities[0]],
+    }))).toThrow('duplicate entity ID')
+    expect(() => deserializeProject(JSON.stringify({
+      ...project,
+      entities: project.entities.filter(({ id }) => id !== DEFAULT_TERRAIN_ID),
+    }))).toThrow(`missing required terrain "${DEFAULT_TERRAIN_ID}"`)
+  })
+
+  it('wraps JSON syntax errors with a user-facing description', () => {
+    expect(() => deserializeProject('{ nope')).toThrow(
+      'Project JSON is not valid JSON',
+    )
+  })
+
   it('round-trips every supported primitive geometry variant', () => {
     const geometries: readonly PrimitiveGeometry[] = [
       { kind: 'cylinder', radiusMeters: 0.7, heightMeters: 2.5 },
@@ -413,5 +446,23 @@ describe('project model', () => {
     expect(store.getSnapshot().coordinates.northRotationRadians).toBe(0)
     expect(store.canUndo()).toBe(false)
     expect(listener).toHaveBeenCalledTimes(2)
+  })
+
+  it('replaces a loaded project as a fresh undo baseline', () => {
+    const store = createProjectStore(createDefaultProject())
+    store.dispatch({
+      type: 'project.northRotation.set',
+      northRotationRadians: 0.5,
+    })
+    const loaded = {
+      ...createDefaultProject(),
+      name: 'Loaded project',
+    }
+
+    store.replaceProject(loaded)
+
+    expect(store.getSnapshot()).toBe(loaded)
+    expect(store.canUndo()).toBe(false)
+    expect(store.canRedo()).toBe(false)
   })
 })

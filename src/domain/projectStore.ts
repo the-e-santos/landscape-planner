@@ -8,6 +8,7 @@ export interface ProjectStore {
   readonly getSnapshot: () => LandscapeProject
   readonly subscribe: (listener: () => void) => () => void
   readonly dispatch: (command: ProjectCommand) => void
+  readonly replaceProject: (project: LandscapeProject) => void
   readonly canUndo: () => boolean
   readonly canRedo: () => boolean
   readonly beginTransaction: () => void
@@ -40,6 +41,13 @@ export function createProjectStore(
         undoStack.push(previous)
         redoStack.length = 0
       }
+      notify()
+    },
+    replaceProject: (replacement) => {
+      project = replacement
+      undoStack.length = 0
+      redoStack.length = 0
+      transactionStart = null
       notify()
     },
     canUndo: () => undoStack.length > 0,

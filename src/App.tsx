@@ -1,5 +1,6 @@
 import { useEffect, useMemo, useRef, useState, useSyncExternalStore } from 'react'
 import { ParcelEditor, type ParcelMode } from './components/ParcelEditor'
+import { ProjectPersistence } from './components/ProjectPersistence'
 import {
   ObjectEditor,
   type PrimitiveCreationKind,
@@ -15,7 +16,9 @@ import {
   DEFAULT_PARCEL_ID,
   getParcelEntity,
   getTerrainEntity,
+  type LandscapeProject,
 } from './domain/project'
+import { deserializeProject } from './domain/projectSerialization'
 import { createProjectStore } from './domain/projectStore'
 import {
   clonePrimitiveEntity,
@@ -33,6 +36,11 @@ import {
 } from './domain/terrain'
 import { validateTerrain } from './domain/terrainValidation'
 import type { DisplayUnit } from './domain/units'
+import {
+  clearProjectAutosave,
+  loadProjectAutosave,
+  saveProjectAutosave,
+} from './persistence/projectAutosave'
 import {
   createYardScene,
   type PrimitiveManipulationMode,
@@ -304,6 +312,15 @@ function App() {
   })
   const [snapOverrideActive, setSnapOverrideActive] = useState(false)
   const [resizeProportionsLocked, setResizeProportionsLocked] = useState(false)
+  const [recoveryProject, setRecoveryProject] = useState<{
+    project: LandscapeProject
+    savedAt: string
+  } | null>(null)
+  const [autosaveEnabled, setAutosaveEnabled] = useState(false)
+  const [persistenceStatus, setPersistenceStatus] = useState(
+    'Checking local recovery…',
+  )
+  const [persistenceError, setPersistenceError] = useState<string | null>(null)
   const [rectangle, setRectangle] = useState({
     eastWestMeters: 30,
     northSouthMeters: 40,
@@ -329,6 +346,49 @@ function App() {
     ? selectedEntityId
     : null
   const terrainIssues = validateTerrain(terrain)
+
+  useEffect(() => {
+    let active = true
+    loadProjectAutosave()
+      .then((autosave) => {
+        if (!active) return
+        if (autosave) {
+          setRecoveryProject({
+            project: deserializeProject(autosave.json),
+            savedAt: autosave.savedAt,
+          })
+          setPersistenceStatus('Choose whether to restore the local recovery copy.')
+        } else {
+          setAutosaveEnabled(true)
+          setPersistenceStatus('Autosave ready.')
+        }
+      })
+      .catch((error: unknown) => {
+        if (!active) return
+        setPersistenceError(
+          `Local recovery could not be read: ${error instanceof Error ? error.message : 'unknown error'}`,
+        )
+        setAutosaveEnabled(true)
+      })
+    return () => {
+      active = false
+    }
+  }, [])
+
+  useEffect(() => {
+    if (!autosaveEnabled) return
+    const timer = window.setTimeout(() => {
+      saveProjectAutosave(project)
+        .then(() => {
+          setPersistenceError(null)
+          setPersistenceStatus(`Autosaved at ${new Date().toLocaleTimeString()}.`)
+        })
+        .catch((error: unknown) => setPersistenceError(
+          `Autosave failed: ${error instanceof Error ? error.message : 'unknown error'}`,
+        ))
+    }, 750)
+    return () => window.clearTimeout(timer)
+  }, [autosaveEnabled, project])
 
   const rectangleVertices = useMemo(
     () =>
@@ -463,6 +523,50 @@ function App() {
   return (
     <main className="app-shell">
       <div ref={viewportRef} className="viewport" />
+      <ProjectPersistence
+        project={project}
+        recoverySavedAt={recoveryProject?.savedAt ?? null}
+        status={persistenceStatus}
+        error={persistenceError}
+        onLoad={(file) => {
+          file.text()
+            .then((json) => {
+              const loadedProject = deserializeProject(json)
+              projectStore.replaceProject(loadedProject)
+              setMode('polygon')
+              setSelectedEntityId(null)
+              setRecoveryProject(null)
+              setAutosaveEnabled(true)
+              setPersistenceError(null)
+              setPersistenceStatus(`Loaded ${file.name}.`)
+            })
+            .catch((error: unknown) => setPersistenceError(
+              `Could not load ${file.name}: ${error instanceof Error ? error.message : 'unknown error'}`,
+            ))
+        }}
+        onRestore={() => {
+          if (!recoveryProject) return
+          projectStore.replaceProject(recoveryProject.project)
+          setMode('polygon')
+          setSelectedEntityId(null)
+          setRecoveryProject(null)
+          setAutosaveEnabled(true)
+          setPersistenceError(null)
+          setPersistenceStatus('Recovered local autosave.')
+        }}
+        onDismissRecovery={() => {
+          clearProjectAutosave()
+            .then(() => {
+              setRecoveryProject(null)
+              setAutosaveEnabled(true)
+              setPersistenceError(null)
+              setPersistenceStatus('Recovery dismissed. Autosave ready.')
+            })
+            .catch((error: unknown) => setPersistenceError(
+              `Could not dismiss recovery: ${error instanceof Error ? error.message : 'unknown error'}`,
+            ))
+        }}
+      />
       <ParcelEditor
         mode={mode}
         unit={unit}
