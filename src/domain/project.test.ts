@@ -12,11 +12,15 @@ import {
   serializeProject,
 } from './projectSerialization'
 import { createProjectStore } from './projectStore'
-import { DEFAULT_TERRAIN_ID, type SpotElevation } from './terrain'
+import {
+  DEFAULT_TERRAIN_ID,
+  type SpotElevation,
+  type TerrainLinearConstraint,
+} from './terrain'
 
 describe('project model', () => {
   it('round-trips a representative versioned project through JSON', () => {
-    const project = applyProjectCommand(createDefaultProject(), {
+    const projectWithParcelUpdate = applyProjectCommand(createDefaultProject(), {
       type: 'parcel.geometry.replace',
       entityId: DEFAULT_PARCEL_ID,
       geometry: {
@@ -26,6 +30,23 @@ describe('project model', () => {
           { eastMeters: 6, northMeters: 9.75 },
         ],
         uncertaintyMeters: 0.42,
+      },
+    })
+    const constraintSpotIds = getTerrainEntity(
+      projectWithParcelUpdate,
+      DEFAULT_TERRAIN_ID,
+    ).spotElevations
+      .slice(0, 3)
+      .map(({ id }) => id)
+    const project = applyProjectCommand(projectWithParcelUpdate, {
+      type: 'terrain.linearConstraint.add',
+      terrainEntityId: DEFAULT_TERRAIN_ID,
+      constraint: {
+        id: 'terrain.main.constraint.round-trip',
+        name: 'Measured grade break',
+        role: 'gradeBreak',
+        spotElevationIds: constraintSpotIds,
+        source: { kind: 'survey', note: 'Serialization fixture' },
       },
     })
 
@@ -97,6 +118,50 @@ describe('project model', () => {
     expect(
       getTerrainEntity(withRemovedSpot, DEFAULT_TERRAIN_ID).spotElevations,
     ).not.toContainEqual(replacedSpot)
+  })
+
+  it('adds, replaces, and removes a linear constraint by stable ID', () => {
+    const original = createDefaultProject()
+    const spotIds = getTerrainEntity(
+      original,
+      DEFAULT_TERRAIN_ID,
+    ).spotElevations.map(({ id }) => id)
+    const constraint: TerrainLinearConstraint = {
+      id: 'terrain.main.constraint.test',
+      name: 'Test grade break',
+      role: 'gradeBreak',
+      spotElevationIds: spotIds.slice(0, 2),
+      source: { kind: 'user' },
+    }
+    const withConstraint = applyProjectCommand(original, {
+      type: 'terrain.linearConstraint.add',
+      terrainEntityId: DEFAULT_TERRAIN_ID,
+      constraint,
+    })
+    const replacement = { ...constraint, name: 'Test ridge', role: 'ridge' as const }
+    const withReplacement = applyProjectCommand(withConstraint, {
+      type: 'terrain.linearConstraint.replace',
+      terrainEntityId: DEFAULT_TERRAIN_ID,
+      constraint: replacement,
+    })
+    const withoutConstraint = applyProjectCommand(withReplacement, {
+      type: 'terrain.linearConstraint.remove',
+      terrainEntityId: DEFAULT_TERRAIN_ID,
+      constraintId: constraint.id,
+    })
+
+    expect(
+      getTerrainEntity(original, DEFAULT_TERRAIN_ID).linearConstraints,
+    ).toEqual([])
+    expect(
+      getTerrainEntity(withConstraint, DEFAULT_TERRAIN_ID).linearConstraints,
+    ).toContainEqual(constraint)
+    expect(
+      getTerrainEntity(withReplacement, DEFAULT_TERRAIN_ID).linearConstraints,
+    ).toContainEqual(replacement)
+    expect(
+      getTerrainEntity(withoutConstraint, DEFAULT_TERRAIN_ID).linearConstraints,
+    ).toEqual([])
   })
 
   it('notifies subscribers after dispatching a command', () => {

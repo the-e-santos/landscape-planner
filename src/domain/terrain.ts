@@ -25,12 +25,25 @@ export interface SpotElevation {
   readonly uncertainty: TerrainPointUncertainty
 }
 
+export type TerrainLinearConstraintRole = 'gradeBreak' | 'ridge' | 'swale'
+
+export interface TerrainLinearConstraint {
+  readonly id: string
+  readonly name: string
+  readonly role: TerrainLinearConstraintRole
+  /** Ordered spot-elevation IDs forming the constraint polyline. */
+  readonly spotElevationIds: readonly string[]
+  readonly source: TerrainMeasurementSource
+}
+
 export interface TerrainEntity {
   readonly id: string
   readonly kind: 'terrain'
   readonly name: string
   /** Authoritative inputs; a triangulated surface is derived and not persisted. */
   readonly spotElevations: readonly SpotElevation[]
+  /** Missing on early schema-v1 files and treated as an empty collection. */
+  readonly linearConstraints?: readonly TerrainLinearConstraint[]
 }
 
 export const DEFAULT_TERRAIN_ID = 'terrain.main'
@@ -67,6 +80,7 @@ export function createFlatTerrainEntity({
     id,
     kind: 'terrain',
     name,
+    linearConstraints: [],
     spotElevations: positions.map((position) => ({
       id: `${id}.spot.${position.suffix}`,
       eastMeters: position.eastMeters,
@@ -76,4 +90,10 @@ export function createFlatTerrainEntity({
       uncertainty: { ...uncertainty },
     })),
   }
+}
+
+export function getTerrainLinearConstraints(
+  terrain: TerrainEntity,
+): readonly TerrainLinearConstraint[] {
+  return terrain.linearConstraints ?? []
 }

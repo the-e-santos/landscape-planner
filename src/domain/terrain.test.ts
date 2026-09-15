@@ -1,6 +1,7 @@
 import { describe, expect, it } from 'vitest'
 import {
   createFlatTerrainEntity,
+  type TerrainLinearConstraint,
   type SpotElevation,
   type TerrainEntity,
 } from './terrain'
@@ -24,12 +25,14 @@ function createSpot(
 
 function createTerrain(
   spotElevations: readonly SpotElevation[],
+  linearConstraints: readonly TerrainLinearConstraint[] = [],
 ): TerrainEntity {
   return {
     id: 'terrain.fixture',
     kind: 'terrain',
     name: 'Fixture',
     spotElevations,
+    linearConstraints,
   }
 }
 
@@ -90,6 +93,72 @@ describe('terrain domain', () => {
 
     expect(issues).toEqual([
       expect.objectContaining({ code: 'collinear-points', severity: 'error' }),
+    ])
+  })
+
+  it('accepts grade-break, ridge, and swale polylines by spot ID', () => {
+    const spots = [
+      createSpot('spot.a', 0, 0),
+      createSpot('spot.b', 2, 0),
+      createSpot('spot.c', 0, 2),
+    ]
+    const constraints: TerrainLinearConstraint[] = [
+      {
+        id: 'constraint.grade-break',
+        name: 'Grade break',
+        role: 'gradeBreak',
+        spotElevationIds: ['spot.a', 'spot.b'],
+        source: { kind: 'survey' },
+      },
+      {
+        id: 'constraint.ridge',
+        name: 'Ridge',
+        role: 'ridge',
+        spotElevationIds: ['spot.b', 'spot.c'],
+        source: { kind: 'user' },
+      },
+      {
+        id: 'constraint.swale',
+        name: 'Swale',
+        role: 'swale',
+        spotElevationIds: ['spot.c', 'spot.a'],
+        source: { kind: 'estimated' },
+      },
+    ]
+
+    expect(validateTerrain(createTerrain(spots, constraints))).toEqual([])
+  })
+
+  it('reports invalid linear-constraint identities and spot references', () => {
+    const spots = [
+      createSpot('spot.a', 0, 0),
+      createSpot('spot.b', 2, 0),
+      createSpot('spot.c', 0, 2),
+    ]
+    const createConstraint = (
+      id: string,
+      spotElevationIds: readonly string[],
+    ): TerrainLinearConstraint => ({
+      id,
+      name: 'Constraint',
+      role: 'gradeBreak',
+      spotElevationIds,
+      source: { kind: 'user' },
+    })
+    const issueCodes = validateTerrain(
+      createTerrain(spots, [
+        createConstraint('', ['spot.a']),
+        createConstraint('constraint.same', ['spot.a', 'spot.missing']),
+        createConstraint('constraint.same', ['spot.b', 'spot.b']),
+      ]),
+    ).map(({ code }) => code)
+
+    expect(issueCodes).toEqual([
+      'empty-constraint-id',
+      'insufficient-constraint-points',
+      'missing-constraint-spot',
+      'duplicate-constraint-id',
+      'repeated-constraint-spot',
     ])
   })
 })

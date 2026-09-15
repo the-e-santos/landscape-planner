@@ -1,24 +1,29 @@
-import type { SpotElevation, TerrainEntity } from './terrain'
+import {
+  getTerrainLinearConstraints,
+  type SpotElevation,
+  type TerrainEntity,
+} from './terrain'
 
-export type TerrainValidationIssue =
-  | {
-      readonly code: 'insufficient-points'
-      readonly severity: 'warning'
-      readonly message: string
-    }
-  | {
-      readonly code:
-        | 'empty-id'
-        | 'duplicate-id'
-        | 'non-finite-position'
-        | 'non-finite-elevation'
-        | 'invalid-uncertainty'
-        | 'duplicate-position'
-        | 'collinear-points'
-      readonly severity: 'error'
-      readonly message: string
-      readonly spotElevationIds: readonly string[]
-    }
+export interface TerrainValidationIssue {
+  readonly code:
+    | 'insufficient-points'
+    | 'empty-id'
+    | 'duplicate-id'
+    | 'non-finite-position'
+    | 'non-finite-elevation'
+    | 'invalid-uncertainty'
+    | 'duplicate-position'
+    | 'collinear-points'
+    | 'empty-constraint-id'
+    | 'duplicate-constraint-id'
+    | 'insufficient-constraint-points'
+    | 'missing-constraint-spot'
+    | 'repeated-constraint-spot'
+  readonly severity: 'warning' | 'error'
+  readonly message: string
+  readonly spotElevationIds?: readonly string[]
+  readonly constraintIds?: readonly string[]
+}
 
 function positionKey(spot: SpotElevation): string {
   return `${spot.eastMeters}\u0000${spot.northMeters}`
@@ -143,6 +148,69 @@ export function validateTerrain(
       spotElevationIds: terrain.spotElevations.map(({ id }) => id),
     })
   }
+
+  const constraintIds = new Set<string>()
+  getTerrainLinearConstraints(terrain).forEach((constraint) => {
+    if (constraint.id.trim().length === 0) {
+      issues.push({
+        code: 'empty-constraint-id',
+        severity: 'error',
+        message: 'A terrain constraint has an empty ID.',
+        constraintIds: [constraint.id],
+      })
+    } else if (constraintIds.has(constraint.id)) {
+      issues.push({
+        code: 'duplicate-constraint-id',
+        severity: 'error',
+        message: `Terrain constraint ID is duplicated: ${constraint.id}`,
+        constraintIds: [constraint.id],
+      })
+    }
+    constraintIds.add(constraint.id)
+
+    if (constraint.spotElevationIds.length < 2) {
+      issues.push({
+        code: 'insufficient-constraint-points',
+        severity: 'error',
+        message: `Terrain constraint ${constraint.id} needs at least two spot elevations.`,
+        constraintIds: [constraint.id],
+        spotElevationIds: constraint.spotElevationIds,
+      })
+    }
+
+    const referencedIds = new Set<string>()
+    const repeatedIds = new Set<string>()
+    const missingIds = new Set<string>()
+    constraint.spotElevationIds.forEach((spotElevationId) => {
+      if (referencedIds.has(spotElevationId)) {
+        repeatedIds.add(spotElevationId)
+      }
+      referencedIds.add(spotElevationId)
+      if (!ids.has(spotElevationId)) {
+        missingIds.add(spotElevationId)
+      }
+    })
+
+    if (missingIds.size > 0) {
+      issues.push({
+        code: 'missing-constraint-spot',
+        severity: 'error',
+        message: `Terrain constraint ${constraint.id} references missing spot elevations.`,
+        constraintIds: [constraint.id],
+        spotElevationIds: [...missingIds],
+      })
+    }
+
+    if (repeatedIds.size > 0) {
+      issues.push({
+        code: 'repeated-constraint-spot',
+        severity: 'error',
+        message: `Terrain constraint ${constraint.id} repeats spot elevations.`,
+        constraintIds: [constraint.id],
+        spotElevationIds: [...repeatedIds],
+      })
+    }
+  })
 
   return issues
 }

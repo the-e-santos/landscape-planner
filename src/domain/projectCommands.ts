@@ -1,6 +1,11 @@
 import type { ParcelGeometry } from './parcel'
 import type { EntityId, LandscapeProject, ProjectEntity } from './project'
-import type { SpotElevation, TerrainEntity } from './terrain'
+import {
+  getTerrainLinearConstraints,
+  type SpotElevation,
+  type TerrainEntity,
+  type TerrainLinearConstraint,
+} from './terrain'
 
 export type ProjectCommand =
   | {
@@ -27,12 +32,37 @@ export type ProjectCommand =
       readonly terrainEntityId: EntityId
       readonly spotElevationId: string
     }
+  | {
+      readonly type: 'terrain.linearConstraint.add'
+      readonly terrainEntityId: EntityId
+      readonly constraint: TerrainLinearConstraint
+    }
+  | {
+      readonly type: 'terrain.linearConstraint.replace'
+      readonly terrainEntityId: EntityId
+      readonly constraint: TerrainLinearConstraint
+    }
+  | {
+      readonly type: 'terrain.linearConstraint.remove'
+      readonly terrainEntityId: EntityId
+      readonly constraintId: string
+    }
 
 function cloneSpotElevation(spot: SpotElevation): SpotElevation {
   return {
     ...spot,
     source: { ...spot.source },
     uncertainty: { ...spot.uncertainty },
+  }
+}
+
+function cloneLinearConstraint(
+  constraint: TerrainLinearConstraint,
+): TerrainLinearConstraint {
+  return {
+    ...constraint,
+    spotElevationIds: [...constraint.spotElevationIds],
+    source: { ...constraint.source },
   }
 }
 
@@ -160,6 +190,63 @@ export function applyProjectCommand(
         }
 
         return { ...terrain, spotElevations }
+      })
+
+    case 'terrain.linearConstraint.add':
+      return updateTerrain(project, command.terrainEntityId, (terrain) => {
+        const linearConstraints = getTerrainLinearConstraints(terrain)
+        if (linearConstraints.some(({ id }) => id === command.constraint.id)) {
+          throw new Error(
+            `Terrain constraint already exists: ${command.constraint.id}`,
+          )
+        }
+
+        return {
+          ...terrain,
+          linearConstraints: [
+            ...linearConstraints,
+            cloneLinearConstraint(command.constraint),
+          ],
+        }
+      })
+
+    case 'terrain.linearConstraint.replace':
+      return updateTerrain(project, command.terrainEntityId, (terrain) => {
+        let found = false
+        const linearConstraints = getTerrainLinearConstraints(terrain).map(
+          (constraint) => {
+            if (constraint.id !== command.constraint.id) {
+              return constraint
+            }
+
+            found = true
+            return cloneLinearConstraint(command.constraint)
+          },
+        )
+
+        if (!found) {
+          throw new Error(
+            `Terrain constraint not found: ${command.constraint.id}`,
+          )
+        }
+
+        return { ...terrain, linearConstraints }
+      })
+
+    case 'terrain.linearConstraint.remove':
+      return updateTerrain(project, command.terrainEntityId, (terrain) => {
+        const currentConstraints = getTerrainLinearConstraints(terrain)
+        const linearConstraints = currentConstraints.filter(
+          ({ id }) => id !== command.constraintId,
+        )
+
+        if (linearConstraints.length === currentConstraints.length) {
+          throw new Error(
+            `Terrain constraint not found: ${command.constraintId}`,
+          )
+        }
+
+        return { ...terrain, linearConstraints }
       })
   }
 }
