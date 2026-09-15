@@ -1,11 +1,16 @@
-import { useEffect, useMemo, useRef, useState } from 'react'
+import { useEffect, useMemo, useRef, useState, useSyncExternalStore } from 'react'
 import { ParcelEditor, type ParcelMode } from './components/ParcelEditor'
 import {
   createRectangleVertices,
   insertParcelMidpoint,
-  type ParcelGeometry,
   type ParcelPoint,
 } from './domain/parcel'
+import {
+  createDefaultProject,
+  DEFAULT_PARCEL_ID,
+  getProjectEntity,
+} from './domain/project'
+import { createProjectStore } from './domain/projectStore'
 import type { DisplayUnit } from './domain/units'
 import { createYardScene, type YardScene } from './scene/createYardScene'
 import './App.css'
@@ -19,11 +24,14 @@ function App() {
     eastWestMeters: 30,
     northSouthMeters: 40,
   })
-  const [polygonVertices, setPolygonVertices] = useState<ParcelPoint[]>(() =>
-    createRectangleVertices(30, 40),
+  const [projectStore] = useState(() =>
+    createProjectStore(createDefaultProject()),
   )
-  const [polygonIsCustomized, setPolygonIsCustomized] = useState(false)
-  const [uncertaintyMeters, setUncertaintyMeters] = useState(0.3)
+  const project = useSyncExternalStore(
+    projectStore.subscribe,
+    projectStore.getSnapshot,
+  )
+  const parcel = getProjectEntity(project, DEFAULT_PARCEL_ID).geometry
 
   const rectangleVertices = useMemo(
     () =>
@@ -33,13 +41,16 @@ function App() {
       ),
     [rectangle],
   )
-  const parcel = useMemo<ParcelGeometry>(
-    () => ({
-      vertices: mode === 'rectangle' ? rectangleVertices : polygonVertices,
-      uncertaintyMeters,
-    }),
-    [mode, polygonVertices, rectangleVertices, uncertaintyMeters],
-  )
+  const replaceParcelGeometry = (
+    vertices: readonly ParcelPoint[],
+    uncertaintyMeters = parcel.uncertaintyMeters,
+  ) => {
+    projectStore.dispatch({
+      type: 'parcel.geometry.replace',
+      entityId: DEFAULT_PARCEL_ID,
+      geometry: { vertices, uncertaintyMeters },
+    })
+  }
 
   useEffect(() => {
     const viewport = viewportRef.current
@@ -58,8 +69,8 @@ function App() {
   }, []) // The Three.js lifecycle is intentionally independent of React state.
 
   useEffect(() => {
-    yardSceneRef.current?.updateParcel(parcel)
-  }, [parcel])
+    yardSceneRef.current?.updateProject(project)
+  }, [project])
 
   return (
     <main className="app-shell">
@@ -68,38 +79,42 @@ function App() {
         mode={mode}
         unit={unit}
         rectangle={rectangle}
-        polygonVertices={polygonVertices}
-        uncertaintyMeters={uncertaintyMeters}
+        polygonVertices={parcel.vertices}
+        uncertaintyMeters={parcel.uncertaintyMeters}
         onModeChange={(nextMode) => {
-          if (nextMode === 'polygon' && !polygonIsCustomized) {
-            setPolygonVertices(rectangleVertices)
+          if (nextMode === 'rectangle') {
+            replaceParcelGeometry(rectangleVertices)
           }
 
           setMode(nextMode)
         }}
         onUnitChange={setUnit}
-        onRectangleChange={setRectangle}
-        onPolygonChange={(vertices) => {
-          setPolygonIsCustomized(true)
-          setPolygonVertices(vertices)
-        }}
-        onInsertVertex={(afterIndex) => {
-          setPolygonIsCustomized(true)
-          setPolygonVertices((vertices) =>
-            insertParcelMidpoint(vertices, afterIndex),
+        onRectangleChange={(nextRectangle) => {
+          setRectangle(nextRectangle)
+          replaceParcelGeometry(
+            createRectangleVertices(
+              nextRectangle.eastWestMeters,
+              nextRectangle.northSouthMeters,
+            ),
           )
         }}
+        onPolygonChange={(vertices) => {
+          replaceParcelGeometry(vertices)
+        }}
+        onInsertVertex={(afterIndex) => {
+          replaceParcelGeometry(insertParcelMidpoint(parcel.vertices, afterIndex))
+        }}
         onRemoveVertex={(index) => {
-          setPolygonIsCustomized(true)
-          setPolygonVertices((vertices) =>
-            vertices.filter((_, vertexIndex) => vertexIndex !== index),
+          replaceParcelGeometry(
+            parcel.vertices.filter((_, vertexIndex) => vertexIndex !== index),
           )
         }}
         onResetPolygon={() => {
-          setPolygonIsCustomized(false)
-          setPolygonVertices(rectangleVertices)
+          replaceParcelGeometry(rectangleVertices)
         }}
-        onUncertaintyChange={setUncertaintyMeters}
+        onUncertaintyChange={(uncertaintyMeters) =>
+          replaceParcelGeometry(parcel.vertices, uncertaintyMeters)
+        }
       />
     </main>
   )

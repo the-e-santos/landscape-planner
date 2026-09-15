@@ -1,13 +1,17 @@
 import * as THREE from 'three/webgpu'
 import { OrbitControls } from 'three/addons/controls/OrbitControls.js'
-import { getParcelBounds, type ParcelGeometry } from '../domain/parcel'
+import { getParcelBounds } from '../domain/parcel'
+import type { LandscapeProject } from '../domain/project'
+import {
+  createParcelView,
+  PARCEL_VIEW_HEIGHT,
+  type ParcelView,
+} from './createParcelView'
 
 export interface YardScene {
-  updateParcel(parcel: ParcelGeometry): void
+  updateProject(project: LandscapeProject): void
   dispose(): void
 }
-
-const PARCEL_HEIGHT = 0.035
 
 export function createYardScene(viewport: HTMLDivElement): YardScene {
   const scene = new THREE.Scene()
@@ -52,10 +56,6 @@ export function createYardScene(viewport: HTMLDivElement): YardScene {
   sunLight.position.set(10, 15, 5)
   scene.add(sunLight)
 
-  const parcelGroup = new THREE.Group()
-  parcelGroup.name = 'parcel-view'
-  scene.add(parcelGroup)
-
   const northArrow = new THREE.ArrowHelper(
     new THREE.Vector3(0, 0, -1),
     new THREE.Vector3(),
@@ -67,106 +67,46 @@ export function createYardScene(viewport: HTMLDivElement): YardScene {
   northArrow.name = 'true-north'
   scene.add(northArrow)
 
-  let parcelGeometries = new Set<THREE.BufferGeometry>()
-  let parcelMaterials = new Set<THREE.Material>()
+  const parcelViews = new Map<string, ParcelView>()
 
-  const clearParcelView = () => {
-    parcelGroup.clear()
-    parcelGeometries.forEach((geometry) => geometry.dispose())
-    parcelMaterials.forEach((material) => material.dispose())
-    parcelGeometries = new Set()
-    parcelMaterials = new Set()
-  }
+  const updateProject = (project: LandscapeProject) => {
+    const activeIds = new Set(project.entities.map(({ id }) => id))
 
-  const updateParcel = (parcel: ParcelGeometry) => {
-    clearParcelView()
-
-    if (parcel.vertices.length < 3) {
-      return
-    }
-
-    const worldPoints = parcel.vertices.map(
-      (vertex) =>
-        new THREE.Vector3(
-          vertex.eastMeters,
-          PARCEL_HEIGHT,
-          -vertex.northMeters,
-        ),
-    )
-    const uncertainty = Math.max(parcel.uncertaintyMeters, 0)
-
-    if (uncertainty > 0) {
-      const corridorMaterial = new THREE.MeshBasicMaterial({
-        color: 0xf1c75b,
-        opacity: 0.28,
-        transparent: true,
-        depthWrite: false,
-      })
-      const cornerGeometry = new THREE.CylinderGeometry(1, 1, 0.012, 32)
-      parcelMaterials.add(corridorMaterial)
-      parcelGeometries.add(cornerGeometry)
-
-      parcel.vertices.forEach((vertex, index) => {
-        const next = parcel.vertices[(index + 1) % parcel.vertices.length]
-        const deltaEast = next.eastMeters - vertex.eastMeters
-        const deltaNorth = next.northMeters - vertex.northMeters
-        const edgeLength = Math.hypot(deltaEast, deltaNorth)
-
-        if (edgeLength > 0) {
-          const edgeGeometry = new THREE.BoxGeometry(
-            edgeLength + uncertainty * 2,
-            0.012,
-            uncertainty * 2,
-          )
-          const edge = new THREE.Mesh(edgeGeometry, corridorMaterial)
-          edge.position.set(
-            (vertex.eastMeters + next.eastMeters) / 2,
-            PARCEL_HEIGHT / 2,
-            -(vertex.northMeters + next.northMeters) / 2,
-          )
-          edge.rotation.y = Math.atan2(deltaNorth, deltaEast)
-          parcelGeometries.add(edgeGeometry)
-          parcelGroup.add(edge)
-        }
-
-        const corner = new THREE.Mesh(cornerGeometry, corridorMaterial)
-        corner.position.set(
-          vertex.eastMeters,
-          PARCEL_HEIGHT / 2,
-          -vertex.northMeters,
-        )
-        corner.scale.set(uncertainty, 1, uncertainty)
-        parcelGroup.add(corner)
-      })
-    }
-
-    const boundaryGeometry = new THREE.BufferGeometry().setFromPoints(worldPoints)
-    const boundaryMaterial = new THREE.LineBasicMaterial({ color: 0xf8f3dc })
-    const boundary = new THREE.LineLoop(boundaryGeometry, boundaryMaterial)
-    parcelGeometries.add(boundaryGeometry)
-    parcelMaterials.add(boundaryMaterial)
-    parcelGroup.add(boundary)
-
-    const markerGeometry = new THREE.CylinderGeometry(0.18, 0.18, 0.05, 20)
-    const markerMaterial = new THREE.MeshBasicMaterial({ color: 0x24362a })
-    parcelGeometries.add(markerGeometry)
-    parcelMaterials.add(markerMaterial)
-
-    parcel.vertices.forEach((vertex) => {
-      const marker = new THREE.Mesh(markerGeometry, markerMaterial)
-      marker.position.set(
-        vertex.eastMeters,
-        PARCEL_HEIGHT,
-        -vertex.northMeters,
-      )
-      parcelGroup.add(marker)
+    parcelViews.forEach((view, entityId) => {
+      if (!activeIds.has(entityId)) {
+        view.dispose()
+        parcelViews.delete(entityId)
+      }
     })
 
-    const bounds = getParcelBounds(parcel.vertices)
-    northArrow.position.set(
-      bounds.maxEastMeters + uncertainty + 2,
-      PARCEL_HEIGHT + 0.04,
-      -bounds.minNorthMeters,
+    project.entities.forEach((entity) => {
+      const existingView = parcelViews.get(entity.id)
+
+      if (existingView) {
+        existingView.update(entity)
+      } else {
+        const view = createParcelView(entity)
+        parcelViews.set(entity.id, view)
+        scene.add(view.object)
+      }
+    })
+
+    const parcel = project.entities[0]?.geometry
+    if (parcel) {
+      const bounds = getParcelBounds(parcel.vertices)
+      const uncertainty = Math.max(parcel.uncertaintyMeters, 0)
+      northArrow.position.set(
+        bounds.maxEastMeters + uncertainty + 2,
+        PARCEL_VIEW_HEIGHT + 0.04,
+        -bounds.minNorthMeters,
+      )
+    }
+
+    northArrow.setDirection(
+      new THREE.Vector3(0, 0, -1).applyAxisAngle(
+        new THREE.Vector3(0, 1, 0),
+        project.coordinates.northRotationRadians,
+      ),
     )
   }
 
@@ -186,12 +126,13 @@ export function createYardScene(viewport: HTMLDivElement): YardScene {
   })
 
   return {
-    updateParcel,
+    updateProject,
     dispose: () => {
       resizeObserver.disconnect()
       renderer.setAnimationLoop(null)
       controls.dispose()
-      clearParcelView()
+      parcelViews.forEach((view) => view.dispose())
+      parcelViews.clear()
       groundGeometry.dispose()
       groundMaterial.dispose()
       houseGeometry.dispose()

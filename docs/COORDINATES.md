@@ -20,6 +20,6 @@ Boundary uncertainty is stored as a non-negative distance in meters. The rendere
 corridor extends that distance to either side of each estimated boundary segment.
 It communicates measurement uncertainty and is not a survey or setback boundary.
 
-`northRotation` will be introduced with source alignment or the versioned project
-schema. Until then, the local axes are aligned to true north and the red world-space
-arrow points along `-Z`.
+The versioned project schema stores `northRotationRadians`, measured around `+Y`
+from local `-Z` to true north. It defaults to zero, so the red world-space arrow
+points along `-Z` until source-alignment controls are introduced.
