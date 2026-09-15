@@ -1,8 +1,12 @@
 import * as THREE from 'three/webgpu'
 import { OrbitControls } from 'three/addons/controls/OrbitControls.js'
+import { TransformControls } from 'three/addons/controls/TransformControls.js'
 import { getParcelBounds, type ParcelGeometry } from '../domain/parcel'
 import type { LandscapeProject, ParcelEntity } from '../domain/project'
-import type { PrimitiveEntity } from '../domain/primitive'
+import {
+  resizePrimitiveGeometry,
+  type PrimitiveEntity,
+} from '../domain/primitive'
 import type { TerrainEntity } from '../domain/terrain'
 import {
   createParcelView,
@@ -74,11 +78,18 @@ function synchronizeEntityViews<
 export interface YardScene {
   updateProject(project: LandscapeProject): void
   setSelectedEntityId(entityId: string | null): void
+  setManipulationMode(mode: PrimitiveManipulationMode): void
   dispose(): void
 }
 
+export type PrimitiveManipulationMode = 'translate' | 'rotate' | 'resize'
+
 export interface YardSceneOptions {
   readonly onSelectionChange?: (entityId: string | null) => void
+  readonly onManipulationStart?: () => void
+  readonly onPrimitiveChange?: (primitive: PrimitiveEntity) => void
+  readonly onManipulationEnd?: () => void
+  readonly onManipulationCancel?: () => void
 }
 
 export function getPrimitiveEntityIdFromObject(
@@ -118,6 +129,12 @@ export function createYardScene(
   controls.target.set(0, 0, 0)
   controls.enableDamping = true
 
+  const transformControls = new TransformControls(camera, renderer.domElement)
+  const transformHelper = transformControls.getHelper()
+  const transformProxy = new THREE.Object3D()
+  transformProxy.name = 'primitive-transform-proxy'
+  scene.add(transformHelper, transformProxy)
+
   const grid = new THREE.GridHelper(100, 100, 0x59735d, 0x6f8b72)
   grid.position.y = 0.015
   scene.add(grid)
@@ -153,6 +170,29 @@ export function createYardScene(
     SceneViewEntry<PrimitiveEntity, PrimitiveView>
   >()
   let selectedEntityId: string | null = null
+  let manipulationMode: PrimitiveManipulationMode = 'translate'
+  let manipulationStartEntity: PrimitiveEntity | null = null
+  let manipulating = false
+
+  const synchronizeManipulator = () => {
+    const entry = selectedEntityId
+      ? primitiveViews.get(selectedEntityId)
+      : undefined
+    if (!entry) {
+      transformControls.detach()
+      return
+    }
+
+    if (!manipulating) {
+      transformProxy.position.copy(entry.view.object.position)
+      transformProxy.rotation.copy(entry.view.object.rotation)
+      transformProxy.scale.set(1, 1, 1)
+      transformProxy.updateMatrixWorld(true)
+    }
+    if (transformControls.object !== transformProxy) {
+      transformControls.attach(transformProxy)
+    }
+  }
 
   const updateProject = (project: LandscapeProject) => {
     const parcelEntities = project.entities.filter(
@@ -175,6 +215,7 @@ export function createYardScene(
     primitiveViews.forEach(({ view }, entityId) => {
       view.setSelected(entityId === selectedEntityId)
     })
+    synchronizeManipulator()
     const activeTerrainIds = new Set(terrainEntities.map(({ id }) => id))
     terrainViews.forEach((entry, entityId) => {
       if (!activeTerrainIds.has(entityId)) {
@@ -230,7 +271,7 @@ export function createYardScene(
     | { readonly pointerId: number; readonly x: number; readonly y: number }
     | undefined
   const handlePointerDown = (event: PointerEvent) => {
-    if (event.button === 0) {
+    if (event.button === 0 && !manipulating) {
       pointerStart = {
         pointerId: event.pointerId,
         x: event.clientX,
@@ -268,6 +309,66 @@ export function createYardScene(
   renderer.domElement.addEventListener('pointerup', handlePointerUp)
   renderer.domElement.addEventListener('pointercancel', handlePointerCancel)
 
+  const handleManipulationStart = () => {
+    if (!selectedEntityId) {
+      return
+    }
+    const entry = primitiveViews.get(selectedEntityId)
+    if (!entry) {
+      return
+    }
+
+    manipulating = true
+    manipulationStartEntity = entry.entity
+    transformProxy.scale.set(1, 1, 1)
+    options.onManipulationStart?.()
+  }
+  const handlePrimitiveChange = () => {
+    const start = manipulationStartEntity
+    if (!manipulating || !start) {
+      return
+    }
+
+    const transform = manipulationMode === 'resize'
+      ? start.transform
+      : {
+          position: {
+            eastMeters: transformProxy.position.x,
+            elevationMeters: transformProxy.position.y,
+            northMeters: -transformProxy.position.z,
+          },
+          rotation: {
+            xRadians: transformProxy.rotation.x,
+            yRadians: transformProxy.rotation.y,
+            zRadians: transformProxy.rotation.z,
+          },
+        }
+    options.onPrimitiveChange?.({
+      ...start,
+      transform,
+      geometry: manipulationMode === 'resize'
+        ? resizePrimitiveGeometry(start.geometry, transformProxy.scale)
+        : start.geometry,
+    })
+  }
+  const handleManipulationEnd = () => {
+    if (!manipulating) {
+      return
+    }
+
+    manipulating = false
+    manipulationStartEntity = null
+    transformProxy.scale.set(1, 1, 1)
+    options.onManipulationEnd?.()
+  }
+  const handleDraggingChanged = (event: { value: unknown }) => {
+    controls.enabled = event.value !== true
+  }
+  transformControls.addEventListener('mouseDown', handleManipulationStart)
+  transformControls.addEventListener('objectChange', handlePrimitiveChange)
+  transformControls.addEventListener('mouseUp', handleManipulationEnd)
+  transformControls.addEventListener('dragging-changed', handleDraggingChanged)
+
   renderer.setAnimationLoop(() => {
     controls.update()
     renderer.render(scene, camera)
@@ -280,11 +381,38 @@ export function createYardScene(
       primitiveViews.forEach(({ view }, primitiveEntityId) => {
         view.setSelected(primitiveEntityId === selectedEntityId)
       })
+      synchronizeManipulator()
+    },
+    setManipulationMode: (mode) => {
+      manipulationMode = mode
+      transformControls.setMode(mode === 'resize' ? 'scale' : mode)
+      transformControls.setSpace(mode === 'translate' ? 'world' : 'local')
     },
     dispose: () => {
+      if (manipulating) {
+        options.onManipulationCancel?.()
+      }
+      manipulating = false
       resizeObserver.disconnect()
       renderer.setAnimationLoop(null)
       controls.dispose()
+      transformControls.removeEventListener(
+        'mouseDown',
+        handleManipulationStart,
+      )
+      transformControls.removeEventListener(
+        'objectChange',
+        handlePrimitiveChange,
+      )
+      transformControls.removeEventListener('mouseUp', handleManipulationEnd)
+      transformControls.removeEventListener(
+        'dragging-changed',
+        handleDraggingChanged,
+      )
+      transformControls.detach()
+      transformControls.dispose()
+      transformHelper.removeFromParent()
+      transformProxy.removeFromParent()
       renderer.domElement.removeEventListener('pointerdown', handlePointerDown)
       renderer.domElement.removeEventListener('pointerup', handlePointerUp)
       renderer.domElement.removeEventListener(

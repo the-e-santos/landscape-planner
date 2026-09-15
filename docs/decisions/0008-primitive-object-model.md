@@ -28,6 +28,9 @@ cannot be the authoritative representation.
   local `+X`, `+Y`, and `+Z` axes (`+Z` is south), and use the `XYZ` order.
 - Rebuild disposable Three.js geometry when authoritative primitive dimensions
   change. Do not persist a Three.js object, geometry, or scale.
+- During direct resizing, apply the gizmo scale to a scene-only proxy and convert
+  it into shape-specific authoritative dimensions. A complete pointer drag is a
+  single project-store transaction and therefore one undo step.
 - Keep schema version 1 because primitive entities are an additive entity variant
   and existing schema-v1 projects remain valid.
 

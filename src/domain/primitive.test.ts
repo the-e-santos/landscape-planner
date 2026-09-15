@@ -3,6 +3,8 @@ import {
   clonePrimitiveEntity,
   createDefaultHouseEntity,
   getPrimitiveSolarOptics,
+  MIN_PRIMITIVE_DIMENSION_METERS,
+  resizePrimitiveGeometry,
   validatePrimitiveEntity,
   type PrimitiveEntity,
   type PrimitiveGeometry,
@@ -120,5 +122,76 @@ describe('primitive domain model', () => {
 
     expect(clone.solarOptics).toEqual(original.solarOptics)
     expect(clone.solarOptics).not.toBe(original.solarOptics)
+  })
+
+  it('resizes each parametric geometry without introducing persisted scale', () => {
+    expect(resizePrimitiveGeometry(validGeometries[0], {
+      x: 2,
+      y: 0.5,
+      z: 3,
+    })).toEqual({
+      kind: 'box',
+      widthMeters: 4,
+      heightMeters: 0.5,
+      depthMeters: 9,
+    })
+    expect(resizePrimitiveGeometry(validGeometries[1], {
+      x: 0.5,
+      y: 2,
+      z: 1,
+    })).toEqual({
+      kind: 'cylinder',
+      radiusMeters: 0.5,
+      heightMeters: 4,
+    })
+    expect(resizePrimitiveGeometry(validGeometries[2], {
+      x: 2,
+      y: 0.5,
+      z: 3,
+    })).toEqual({
+      kind: 'wall',
+      structure: 'fence',
+      lengthMeters: 8,
+      heightMeters: 0.9,
+      thicknessMeters: 0.24,
+    })
+    expect(resizePrimitiveGeometry(validGeometries[3], {
+      x: 2,
+      y: 2,
+      z: 3,
+    })).toEqual({
+      kind: 'polygonExtrusion',
+      footprint: [
+        { eastMeters: -2, northMeters: -3 },
+        { eastMeters: 2, northMeters: -3 },
+        { eastMeters: 0, northMeters: 3 },
+      ],
+      heightMeters: 1,
+    })
+    expect(resizePrimitiveGeometry(validGeometries[4], {
+      x: 2,
+      y: 0.5,
+      z: 3,
+    })).toEqual({
+      kind: 'canopy',
+      eastRadiusMeters: 4,
+      verticalRadiusMeters: 0.75,
+      northRadiusMeters: 5.25,
+    })
+  })
+
+  it('prevents resize gestures from collapsing a dimension to zero', () => {
+    const resized = resizePrimitiveGeometry(validGeometries[0], {
+      x: 0,
+      y: 0,
+      z: 0,
+    })
+
+    expect(resized).toEqual({
+      kind: 'box',
+      widthMeters: MIN_PRIMITIVE_DIMENSION_METERS,
+      heightMeters: MIN_PRIMITIVE_DIMENSION_METERS,
+      depthMeters: MIN_PRIMITIVE_DIMENSION_METERS,
+    })
   })
 })

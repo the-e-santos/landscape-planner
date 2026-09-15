@@ -33,7 +33,11 @@ import {
 } from './domain/terrain'
 import { validateTerrain } from './domain/terrainValidation'
 import type { DisplayUnit } from './domain/units'
-import { createYardScene, type YardScene } from './scene/createYardScene'
+import {
+  createYardScene,
+  type PrimitiveManipulationMode,
+  type YardScene,
+} from './scene/createYardScene'
 import './App.css'
 
 function createUserSpotElevation(terrain: TerrainEntity): SpotElevation {
@@ -289,6 +293,8 @@ function App() {
   const [mode, setMode] = useState<ParcelMode>('rectangle')
   const [unit, setUnit] = useState<DisplayUnit>('meters')
   const [selectedEntityId, setSelectedEntityId] = useState<string | null>(null)
+  const [manipulationMode, setManipulationMode] =
+    useState<PrimitiveManipulationMode>('translate')
   const [rectangle, setRectangle] = useState({
     eastWestMeters: 30,
     northSouthMeters: 40,
@@ -343,6 +349,13 @@ function App() {
 
     const yardScene = createYardScene(viewport, {
       onSelectionChange: setSelectedEntityId,
+      onManipulationStart: projectStore.beginTransaction,
+      onPrimitiveChange: (primitive) => projectStore.dispatch({
+        type: 'primitive.replace',
+        primitive,
+      }),
+      onManipulationEnd: projectStore.commitTransaction,
+      onManipulationCancel: projectStore.cancelTransaction,
     })
     yardSceneRef.current = yardScene
 
@@ -350,7 +363,7 @@ function App() {
       yardSceneRef.current = null
       yardScene.dispose()
     }
-  }, []) // The Three.js lifecycle is intentionally independent of React state.
+  }, [projectStore]) // The Three.js lifecycle is independent of project snapshots.
 
   useEffect(() => {
     yardSceneRef.current?.updateProject(project)
@@ -359,6 +372,10 @@ function App() {
   useEffect(() => {
     yardSceneRef.current?.setSelectedEntityId(activeSelectedEntityId)
   }, [activeSelectedEntityId])
+
+  useEffect(() => {
+    yardSceneRef.current?.setManipulationMode(manipulationMode)
+  }, [manipulationMode])
 
   useEffect(() => {
     const handleKeyDown = (event: KeyboardEvent) => {
@@ -503,12 +520,14 @@ function App() {
         unit={unit}
         canUndo={projectStore.canUndo()}
         canRedo={projectStore.canRedo()}
+        manipulationMode={manipulationMode}
         onAddPrimitive={(kind) => {
           const primitive = createUserPrimitive(kind, primitives)
           projectStore.dispatch({ type: 'primitive.add', primitive })
           setSelectedEntityId(primitive.id)
         }}
         onSelect={setSelectedEntityId}
+        onManipulationModeChange={setManipulationMode}
         onReplace={(primitive) => projectStore.dispatch({
           type: 'primitive.replace',
           primitive,

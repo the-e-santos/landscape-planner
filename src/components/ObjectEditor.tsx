@@ -4,6 +4,7 @@ import type {
 } from '../domain/primitive'
 import { getPrimitiveSolarOptics } from '../domain/primitive'
 import type { DisplayUnit } from '../domain/units'
+import type { PrimitiveManipulationMode } from '../scene/createYardScene'
 import { LengthInput } from './LengthInput'
 
 export type PrimitiveCreationKind = PrimitiveGeometry['kind'] | 'fence'
@@ -232,8 +233,12 @@ interface ObjectEditorProps {
   readonly unit: DisplayUnit
   readonly canUndo: boolean
   readonly canRedo: boolean
+  readonly manipulationMode: PrimitiveManipulationMode
   readonly onAddPrimitive: (kind: PrimitiveCreationKind) => void
   readonly onSelect: (entityId: string | null) => void
+  readonly onManipulationModeChange: (
+    mode: PrimitiveManipulationMode,
+  ) => void
   readonly onReplace: (primitive: PrimitiveEntity) => void
   readonly onDuplicate: (primitive: PrimitiveEntity) => void
   readonly onRemove: (entityId: string) => void
@@ -259,8 +264,10 @@ export function ObjectEditor({
   unit,
   canUndo,
   canRedo,
+  manipulationMode,
   onAddPrimitive,
   onSelect,
+  onManipulationModeChange,
   onReplace,
   onDuplicate,
   onRemove,
@@ -324,6 +331,23 @@ export function ObjectEditor({
           ))}
         </select>
       </label>
+      <div className="manipulation-toolbar" aria-label="Manipulation mode">
+        {([
+          ['translate', 'Move'],
+          ['rotate', 'Rotate'],
+          ['resize', 'Resize'],
+        ] as const).map(([mode, label]) => (
+          <button
+            key={mode}
+            type="button"
+            disabled={!selected}
+            aria-pressed={manipulationMode === mode}
+            onClick={() => onManipulationModeChange(mode)}
+          >
+            {label}
+          </button>
+        ))}
+      </div>
       {selected ? (
         <section className="object-inspector" aria-label="Selected object properties">
           <label className="field" htmlFor={`${selected.id}-name`}>

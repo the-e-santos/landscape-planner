@@ -374,4 +374,44 @@ describe('project model', () => {
     })
     expect(store.canRedo()).toBe(false)
   })
+
+  it('groups a transaction into one undoable history entry', () => {
+    const store = createProjectStore(createDefaultProject())
+    store.beginTransaction()
+    store.dispatch({
+      type: 'project.northRotation.set',
+      northRotationRadians: 0.25,
+    })
+    store.dispatch({
+      type: 'project.northRotation.set',
+      northRotationRadians: 0.5,
+    })
+
+    expect(store.canUndo()).toBe(false)
+    store.commitTransaction()
+    expect(store.canUndo()).toBe(true)
+    expect(store.getSnapshot().coordinates.northRotationRadians).toBe(0.5)
+
+    store.undo()
+    expect(store.getSnapshot().coordinates.northRotationRadians).toBe(0)
+    expect(store.canUndo()).toBe(false)
+    store.redo()
+    expect(store.getSnapshot().coordinates.northRotationRadians).toBe(0.5)
+  })
+
+  it('can cancel a transaction without creating history', () => {
+    const store = createProjectStore(createDefaultProject())
+    const listener = vi.fn()
+    store.subscribe(listener)
+    store.beginTransaction()
+    store.dispatch({
+      type: 'project.northRotation.set',
+      northRotationRadians: 0.5,
+    })
+    store.cancelTransaction()
+
+    expect(store.getSnapshot().coordinates.northRotationRadians).toBe(0)
+    expect(store.canUndo()).toBe(false)
+    expect(listener).toHaveBeenCalledTimes(2)
+  })
 })

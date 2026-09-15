@@ -61,6 +61,14 @@ export interface CanopyGeometry {
   readonly northRadiusMeters: number
 }
 
+export interface PrimitiveScale {
+  readonly x: number
+  readonly y: number
+  readonly z: number
+}
+
+export const MIN_PRIMITIVE_DIMENSION_METERS = 0.01
+
 export type PrimitiveGeometry =
   | BoxGeometry
   | CylinderGeometry
@@ -138,6 +146,72 @@ export function getPrimitiveSolarOptics(
   entity: PrimitiveEntity,
 ): SolarOptics {
   return entity.solarOptics ?? { mode: 'opaque' }
+}
+
+function scaledDimension(value: number, scale: number): number {
+  return Math.max(
+    MIN_PRIMITIVE_DIMENSION_METERS,
+    value * Math.abs(scale),
+  )
+}
+
+function dominantHorizontalScale(scale: PrimitiveScale): number {
+  return Math.abs(scale.x - 1) >= Math.abs(scale.z - 1)
+    ? scale.x
+    : scale.z
+}
+
+export function resizePrimitiveGeometry(
+  geometry: PrimitiveGeometry,
+  scale: PrimitiveScale,
+): PrimitiveGeometry {
+  switch (geometry.kind) {
+    case 'box':
+      return {
+        ...geometry,
+        widthMeters: scaledDimension(geometry.widthMeters, scale.x),
+        heightMeters: scaledDimension(geometry.heightMeters, scale.y),
+        depthMeters: scaledDimension(geometry.depthMeters, scale.z),
+      }
+
+    case 'cylinder': {
+      const radiusScale = dominantHorizontalScale(scale)
+      return {
+        ...geometry,
+        radiusMeters: scaledDimension(geometry.radiusMeters, radiusScale),
+        heightMeters: scaledDimension(geometry.heightMeters, scale.y),
+      }
+    }
+
+    case 'wall':
+      return {
+        ...geometry,
+        lengthMeters: scaledDimension(geometry.lengthMeters, scale.x),
+        heightMeters: scaledDimension(geometry.heightMeters, scale.y),
+        thicknessMeters: scaledDimension(geometry.thicknessMeters, scale.z),
+      }
+
+    case 'polygonExtrusion':
+      return {
+        ...geometry,
+        footprint: geometry.footprint.map((point) => ({
+          eastMeters: point.eastMeters * Math.abs(scale.x),
+          northMeters: point.northMeters * Math.abs(scale.z),
+        })),
+        heightMeters: scaledDimension(geometry.heightMeters, scale.y),
+      }
+
+    case 'canopy':
+      return {
+        ...geometry,
+        eastRadiusMeters: scaledDimension(geometry.eastRadiusMeters, scale.x),
+        verticalRadiusMeters: scaledDimension(
+          geometry.verticalRadiusMeters,
+          scale.y,
+        ),
+        northRadiusMeters: scaledDimension(geometry.northRadiusMeters, scale.z),
+      }
+  }
 }
 
 function polygonSignedArea(
