@@ -1,14 +1,19 @@
 import * as THREE from 'three/webgpu'
+import type { ParcelGeometry } from '../domain/parcel'
 import type { TerrainEntity } from '../domain/terrain'
+import { clipTerrainMeshToParcel } from '../domain/terrainClipping'
 import { deriveTerrainMesh } from '../domain/terrainMesh'
 
 export interface TerrainView {
   readonly object: THREE.Group
-  update(entity: TerrainEntity): void
+  update(entity: TerrainEntity, parcel?: ParcelGeometry): void
   dispose(): void
 }
 
-export function createTerrainView(entity: TerrainEntity): TerrainView {
+export function createTerrainView(
+  entity: TerrainEntity,
+  parcel?: ParcelGeometry,
+): TerrainView {
   const object = new THREE.Group()
   let geometries = new Set<THREE.BufferGeometry>()
   let materials = new Set<THREE.Material>()
@@ -21,7 +26,10 @@ export function createTerrainView(entity: TerrainEntity): TerrainView {
     materials = new Set()
   }
 
-  const update = (nextEntity: TerrainEntity) => {
+  const update = (
+    nextEntity: TerrainEntity,
+    nextParcel?: ParcelGeometry,
+  ) => {
     clear()
     object.name = `terrain:${nextEntity.id}`
     object.userData.entityId = nextEntity.id
@@ -33,7 +41,18 @@ export function createTerrainView(entity: TerrainEntity): TerrainView {
       return
     }
 
-    const { mesh } = result
+    const clippedResult = nextParcel
+      ? clipTerrainMeshToParcel(result.mesh, nextParcel.vertices)
+      : result
+    object.userData.clippingIssue = clippedResult.ok
+      ? undefined
+      : clippedResult.issue
+
+    if (!clippedResult.ok) {
+      return
+    }
+
+    const { mesh } = clippedResult
     const positions = mesh.vertices.flatMap(
       ({ eastMeters, elevationMeters, northMeters }) => [
         eastMeters,
@@ -85,10 +104,10 @@ export function createTerrainView(entity: TerrainEntity): TerrainView {
     geometries.add(markerGeometry)
     materials.add(markerMaterial)
 
-    mesh.vertices.forEach((vertex) => {
+    nextEntity.spotElevations.forEach((vertex) => {
       const marker = new THREE.Mesh(markerGeometry, markerMaterial)
-      marker.name = `terrain-spot:${vertex.spotElevationId}`
-      marker.userData.spotElevationId = vertex.spotElevationId
+      marker.name = `terrain-spot:${vertex.id}`
+      marker.userData.spotElevationId = vertex.id
       marker.position.set(
         vertex.eastMeters,
         vertex.elevationMeters,
@@ -99,7 +118,7 @@ export function createTerrainView(entity: TerrainEntity): TerrainView {
     })
   }
 
-  update(entity)
+  update(entity, parcel)
 
   return {
     object,

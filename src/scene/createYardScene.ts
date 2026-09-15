@@ -1,6 +1,6 @@
 import * as THREE from 'three/webgpu'
 import { OrbitControls } from 'three/addons/controls/OrbitControls.js'
-import { getParcelBounds } from '../domain/parcel'
+import { getParcelBounds, type ParcelGeometry } from '../domain/parcel'
 import type { LandscapeProject, ParcelEntity } from '../domain/project'
 import type { TerrainEntity } from '../domain/terrain'
 import {
@@ -23,6 +23,12 @@ interface SceneEntityView<Entity> {
 interface SceneViewEntry<Entity, View> {
   entity: Entity
   readonly view: View
+}
+
+interface TerrainViewEntry {
+  terrain: TerrainEntity
+  parcel?: ParcelGeometry
+  readonly view: TerrainView
 }
 
 function synchronizeEntityViews<
@@ -120,7 +126,7 @@ export function createYardScene(viewport: HTMLDivElement): YardScene {
   >()
   const terrainViews = new Map<
     string,
-    SceneViewEntry<TerrainEntity, TerrainView>
+    TerrainViewEntry
   >()
 
   const updateProject = (project: LandscapeProject) => {
@@ -130,15 +136,30 @@ export function createYardScene(viewport: HTMLDivElement): YardScene {
     const terrainEntities = project.entities.filter(
       (entity): entity is TerrainEntity => entity.kind === 'terrain',
     )
-    synchronizeEntityViews(scene, parcelViews, parcelEntities, createParcelView)
-    synchronizeEntityViews(
-      scene,
-      terrainViews,
-      terrainEntities,
-      createTerrainView,
-    )
-
     const parcel = parcelEntities[0]?.geometry
+    synchronizeEntityViews(scene, parcelViews, parcelEntities, createParcelView)
+    const activeTerrainIds = new Set(terrainEntities.map(({ id }) => id))
+    terrainViews.forEach((entry, entityId) => {
+      if (!activeTerrainIds.has(entityId)) {
+        entry.view.dispose()
+        terrainViews.delete(entityId)
+      }
+    })
+    terrainEntities.forEach((terrain) => {
+      const existing = terrainViews.get(terrain.id)
+      if (existing) {
+        if (existing.terrain !== terrain || existing.parcel !== parcel) {
+          existing.view.update(terrain, parcel)
+          existing.terrain = terrain
+          existing.parcel = parcel
+        }
+      } else {
+        const view = createTerrainView(terrain, parcel)
+        terrainViews.set(terrain.id, { terrain, parcel, view })
+        scene.add(view.object)
+      }
+    })
+
     if (parcel) {
       const bounds = getParcelBounds(parcel.vertices)
       const uncertainty = Math.max(parcel.uncertaintyMeters, 0)

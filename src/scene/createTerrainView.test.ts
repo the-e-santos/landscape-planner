@@ -1,5 +1,6 @@
 import * as THREE from 'three/webgpu'
 import { describe, expect, it } from 'vitest'
+import { createRectangleVertices } from '../domain/parcel'
 import { createDefaultProject, getTerrainEntity } from '../domain/project'
 import {
   createFlatTerrainEntity,
@@ -80,6 +81,36 @@ describe('terrain scene view', () => {
     )
     expect(Math.max(...elevations) - Math.min(...elevations)).toBeGreaterThan(1)
     expect(surface.geometry.index?.count).toBe(12)
+
+    view.dispose()
+  })
+
+  it('clips the surface while retaining authoritative outside spot markers', () => {
+    const terrain = createFlatTerrainEntity({
+      eastWestMeters: 20,
+      northSouthMeters: 20,
+    })
+    const view = createTerrainView(terrain, {
+      vertices: createRectangleVertices(10, 10),
+      uncertaintyMeters: 0,
+    })
+    const surface = view.object.getObjectByName('terrain-surface')
+
+    expect(surface).toBeInstanceOf(THREE.Mesh)
+    if (!(surface instanceof THREE.Mesh)) {
+      return
+    }
+
+    const position = surface.geometry.getAttribute('position')
+    const eastValues = Array.from(
+      { length: position.count },
+      (_, index) => position.getX(index),
+    )
+    expect(Math.min(...eastValues)).toBeCloseTo(-5, 6)
+    expect(Math.max(...eastValues)).toBeCloseTo(5, 6)
+    expect(
+      view.object.children.filter(({ name }) => name.startsWith('terrain-spot:')),
+    ).toHaveLength(4)
 
     view.dispose()
   })

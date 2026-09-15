@@ -5,7 +5,8 @@ import {
 } from './terrainValidation'
 
 export interface TerrainMeshVertex {
-  readonly spotElevationId: string
+  /** Present when this vertex is an authoritative spot rather than a clip point. */
+  readonly spotElevationId?: string
   readonly eastMeters: number
   readonly northMeters: number
   readonly elevationMeters: number
