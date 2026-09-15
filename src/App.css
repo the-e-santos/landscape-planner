@@ -101,14 +101,16 @@
   gap: 8px;
 }
 
-.terrain-spot-card {
+.terrain-spot-card,
+.terrain-constraint-card {
   padding: 10px 12px;
   border: 1px solid #d9dfd8;
   border-radius: 9px;
   background: rgb(255 255 255 / 60%);
 }
 
-.terrain-spot-card summary {
+.terrain-spot-card summary,
+.terrain-constraint-card summary {
   display: flex;
   align-items: center;
   gap: 12px;
@@ -117,20 +119,24 @@
   font-weight: 700;
 }
 
-.terrain-spot-card summary::before {
+.terrain-spot-card summary::before,
+.terrain-constraint-card summary::before {
   content: '▸';
   color: #637568;
 }
 
-.terrain-spot-card[open] summary::before {
+.terrain-spot-card[open] summary::before,
+.terrain-constraint-card[open] summary::before {
   content: '▾';
 }
 
-.terrain-spot-card summary span:first-of-type {
+.terrain-spot-card summary span:first-of-type,
+.terrain-constraint-card summary span:nth-of-type(2) {
   flex: 1;
 }
 
-.terrain-spot-card code {
+.terrain-spot-card code,
+.terrain-constraint-card code {
   display: block;
   overflow: hidden;
   margin: 8px 0;
@@ -140,8 +146,116 @@
   white-space: nowrap;
 }
 
-.terrain-spot-card .field {
+.terrain-spot-card .field,
+.terrain-constraint-card .field {
   margin: 7px 0;
+}
+
+.terrain-constraint-section {
+  margin-top: 18px;
+  padding-top: 16px;
+  border-top: 1px solid #d9dfd8;
+}
+
+.terrain-constraint-section h2 {
+  margin: 0 0 3px;
+  font-size: 0.92rem;
+}
+
+.terrain-empty-state {
+  margin: 12px 0 0;
+  color: #5c6c61;
+  font-size: 0.75rem;
+  line-height: 1.45;
+}
+
+.terrain-constraint-list {
+  display: grid;
+  gap: 8px;
+  margin-top: 12px;
+}
+
+.terrain-constraint-card summary span:last-child {
+  color: #69786e;
+  font-size: 0.68rem;
+  font-weight: 600;
+}
+
+.constraint-role-swatch {
+  width: 13px;
+  height: 4px;
+  flex: 0 0 auto;
+  border-radius: 2px;
+}
+
+.constraint-role-swatch.gradeBreak {
+  background: #d3832b;
+}
+
+.constraint-role-swatch.ridge {
+  background: #b34d6b;
+}
+
+.constraint-role-swatch.swale {
+  background: #327aa8;
+}
+
+.terrain-text-input {
+  width: 132px;
+  box-sizing: border-box;
+  padding: 7px 9px;
+  border: 1px solid #c5cec5;
+  border-radius: 7px;
+  color: #1f2d24;
+  background: #fff;
+}
+
+.constraint-point-heading {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  margin-top: 12px;
+  font-size: 0.75rem;
+  font-weight: 700;
+}
+
+.constraint-point-list {
+  display: grid;
+  gap: 5px;
+  margin-top: 6px;
+}
+
+.constraint-point-row {
+  display: grid;
+  grid-template-columns: 18px minmax(0, 1fr) 24px 24px 24px;
+  gap: 4px;
+  align-items: center;
+  font-size: 0.72rem;
+}
+
+.constraint-point-row select {
+  min-width: 0;
+  padding: 5px 6px;
+  border: 1px solid #c5cec5;
+  border-radius: 6px;
+  color: #1f2d24;
+  background: #fff;
+}
+
+.constraint-order-button {
+  width: 24px;
+  height: 24px;
+  padding: 0;
+  border: 0;
+  border-radius: 5px;
+  color: #315f3f;
+  background: #e5eee7;
+  font-weight: 700;
+}
+
+.constraint-order-button.remove {
+  color: #7a3d25;
+  background: #fff1e7;
 }
 
 .remove-spot-button {

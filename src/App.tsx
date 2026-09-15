@@ -15,8 +15,10 @@ import {
 import { createProjectStore } from './domain/projectStore'
 import {
   DEFAULT_TERRAIN_ID,
+  getTerrainLinearConstraints,
   type SpotElevation,
   type TerrainEntity,
+  type TerrainLinearConstraint,
 } from './domain/terrain'
 import { validateTerrain } from './domain/terrainValidation'
 import type { DisplayUnit } from './domain/units'
@@ -72,6 +74,27 @@ function createUserSpotElevation(terrain: TerrainEntity): SpotElevation {
     elevationMeters: elevation,
     source: { kind: 'user' },
     uncertainty: { horizontalMeters: 0.1, verticalMeters: 0.05 },
+  }
+}
+
+function createUserLinearConstraint(
+  terrain: TerrainEntity,
+): TerrainLinearConstraint {
+  const constraints = getTerrainLinearConstraints(terrain)
+  const usedIds = new Set(constraints.map(({ id }) => id))
+  let sequence = 1
+  let id = `${terrain.id}.constraint.user-${sequence}`
+  while (usedIds.has(id)) {
+    sequence += 1
+    id = `${terrain.id}.constraint.user-${sequence}`
+  }
+
+  return {
+    id,
+    name: `Grade break ${constraints.length + 1}`,
+    role: 'gradeBreak',
+    spotElevationIds: terrain.spotElevations.slice(0, 2).map(({ id }) => id),
+    source: { kind: 'user' },
   }
 }
 
@@ -201,6 +224,27 @@ function App() {
             type: 'terrain.spotElevation.remove',
             terrainEntityId: terrain.id,
             spotElevationId,
+          })
+        }
+        onAddConstraint={() =>
+          projectStore.dispatch({
+            type: 'terrain.linearConstraint.add',
+            terrainEntityId: terrain.id,
+            constraint: createUserLinearConstraint(terrain),
+          })
+        }
+        onReplaceConstraint={(constraint) =>
+          projectStore.dispatch({
+            type: 'terrain.linearConstraint.replace',
+            terrainEntityId: terrain.id,
+            constraint,
+          })
+        }
+        onRemoveConstraint={(constraintId) =>
+          projectStore.dispatch({
+            type: 'terrain.linearConstraint.remove',
+            terrainEntityId: terrain.id,
+            constraintId,
           })
         }
       />

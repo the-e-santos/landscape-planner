@@ -114,4 +114,47 @@ describe('terrain scene view', () => {
 
     view.dispose()
   })
+
+  it('renders an authoritative terrain line with its semantic role', () => {
+    const baseTerrain = createFlatTerrainEntity({
+      eastWestMeters: 20,
+      northSouthMeters: 20,
+      elevationMeters: 1,
+    })
+    const [start, end] = baseTerrain.spotElevations
+    const terrain = {
+      ...baseTerrain,
+      linearConstraints: [
+        {
+          id: `${baseTerrain.id}.constraint.ridge`,
+          name: 'Test ridge',
+          role: 'ridge' as const,
+          spotElevationIds: [start.id, end.id],
+          source: { kind: 'survey' as const },
+        },
+      ],
+    }
+    const view = createTerrainView(terrain)
+    const line = view.object.getObjectByName(
+      `terrain-constraint:${terrain.linearConstraints[0].id}`,
+    )
+
+    expect(line).toBeInstanceOf(THREE.Line)
+    if (!(line instanceof THREE.Line)) {
+      return
+    }
+
+    expect(line.userData).toMatchObject({
+      constraintId: terrain.linearConstraints[0].id,
+      role: 'ridge',
+    })
+    const position = line.geometry.getAttribute('position')
+    expect(position.count).toBe(2)
+    expect(position.getY(0)).toBeCloseTo(1.04, 6)
+    expect((line.material as THREE.LineBasicMaterial).color.getHex()).toBe(
+      0xb34d6b,
+    )
+
+    view.dispose()
+  })
 })

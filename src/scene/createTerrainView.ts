@@ -1,6 +1,10 @@
 import * as THREE from 'three/webgpu'
 import type { ParcelGeometry } from '../domain/parcel'
-import type { TerrainEntity } from '../domain/terrain'
+import {
+  getTerrainLinearConstraints,
+  type TerrainEntity,
+  type TerrainLinearConstraintRole,
+} from '../domain/terrain'
 import { clipTerrainMeshToParcel } from '../domain/terrainClipping'
 import { deriveTerrainMesh } from '../domain/terrainMesh'
 
@@ -8,6 +12,12 @@ export interface TerrainView {
   readonly object: THREE.Group
   update(entity: TerrainEntity, parcel?: ParcelGeometry): void
   dispose(): void
+}
+
+const CONSTRAINT_COLORS: Record<TerrainLinearConstraintRole, number> = {
+  gradeBreak: 0xd3832b,
+  ridge: 0xb34d6b,
+  swale: 0x327aa8,
 }
 
 export function createTerrainView(
@@ -99,6 +109,42 @@ export function createTerrainView(
     materials.add(wireframeMaterial)
     object.add(wireframe)
 
+    const spotsById = new Map(
+      nextEntity.spotElevations.map((spot) => [spot.id, spot]),
+    )
+    getTerrainLinearConstraints(nextEntity).forEach((constraint) => {
+      const linePoints = constraint.spotElevationIds.flatMap((spotId) => {
+        const spot = spotsById.get(spotId)
+        return spot
+          ? [spot.eastMeters, spot.elevationMeters + 0.04, -spot.northMeters]
+          : []
+      })
+      if (linePoints.length < 6) {
+        return
+      }
+
+      const constraintGeometry = new THREE.BufferGeometry()
+      constraintGeometry.setAttribute(
+        'position',
+        new THREE.Float32BufferAttribute(linePoints, 3),
+      )
+      const constraintMaterial = new THREE.LineBasicMaterial({
+        color: CONSTRAINT_COLORS[constraint.role],
+        depthWrite: false,
+      })
+      const constraintLine = new THREE.Line(
+        constraintGeometry,
+        constraintMaterial,
+      )
+      constraintLine.name = `terrain-constraint:${constraint.id}`
+      constraintLine.userData.constraintId = constraint.id
+      constraintLine.userData.role = constraint.role
+      constraintLine.renderOrder = 3
+      geometries.add(constraintGeometry)
+      materials.add(constraintMaterial)
+      object.add(constraintLine)
+    })
+
     const markerGeometry = new THREE.SphereGeometry(0.22, 16, 10)
     const markerMaterial = new THREE.MeshBasicMaterial({ color: 0x274234 })
     geometries.add(markerGeometry)
@@ -113,7 +159,7 @@ export function createTerrainView(
         vertex.elevationMeters,
         -vertex.northMeters,
       )
-      marker.renderOrder = 3
+      marker.renderOrder = 4
       object.add(marker)
     })
   }
