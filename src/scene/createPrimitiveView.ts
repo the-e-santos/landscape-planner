@@ -4,6 +4,7 @@ import type { PrimitiveEntity } from '../domain/primitive'
 export interface PrimitiveView {
   readonly object: THREE.Group
   update(entity: PrimitiveEntity): void
+  setSelected(selected: boolean): void
   dispose(): void
 }
 
@@ -84,7 +85,13 @@ function updateMaterial(
 export function createPrimitiveView(entity: PrimitiveEntity): PrimitiveView {
   const object = new THREE.Group()
   let geometry: THREE.BufferGeometry | undefined
+  let selected = false
   const material = new THREE.MeshStandardMaterial({ color: 0xb8afa2 })
+
+  const updateSelection = () => {
+    material.emissive.setHex(selected ? 0x3d6f48 : 0x000000)
+    material.emissiveIntensity = selected ? 0.7 : 0
+  }
 
   const update = (nextEntity: PrimitiveEntity) => {
     object.clear()
@@ -92,6 +99,7 @@ export function createPrimitiveView(entity: PrimitiveEntity): PrimitiveView {
 
     geometry = createGeometry(nextEntity)
     updateMaterial(material, nextEntity)
+    updateSelection()
     const mesh = new THREE.Mesh(geometry, material)
     mesh.name = `primitive-mesh:${nextEntity.id}`
     mesh.userData.entityId = nextEntity.id
@@ -117,6 +125,10 @@ export function createPrimitiveView(entity: PrimitiveEntity): PrimitiveView {
   return {
     object,
     update,
+    setSelected: (nextSelected) => {
+      selected = nextSelected
+      updateSelection()
+    },
     dispose: () => {
       geometry?.dispose()
       material.dispose()

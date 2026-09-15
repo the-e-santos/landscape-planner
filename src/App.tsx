@@ -17,7 +17,11 @@ import {
   getTerrainEntity,
 } from './domain/project'
 import { createProjectStore } from './domain/projectStore'
-import type { PrimitiveEntity, PrimitiveGeometry } from './domain/primitive'
+import {
+  clonePrimitiveEntity,
+  type PrimitiveEntity,
+  type PrimitiveGeometry,
+} from './domain/primitive'
 import {
   DEFAULT_TERRAIN_ID,
   getTerrainLinearConstraints,
@@ -245,6 +249,37 @@ function createUserPrimitive(
       rotation: { xRadians: 0, yRadians: 0, zRadians: 0 },
     },
     geometry,
+    solarOptics: kind === 'canopy'
+      ? { mode: 'transmissive', transmittance: 0.5 }
+      : { mode: 'opaque' },
+  }
+}
+
+function duplicateUserPrimitive(
+  source: PrimitiveEntity,
+  primitives: readonly PrimitiveEntity[],
+): PrimitiveEntity {
+  const usedIds = new Set(primitives.map(({ id }) => id))
+  let sequence = 1
+  let id = `${source.id}.copy-${sequence}`
+  while (usedIds.has(id)) {
+    sequence += 1
+    id = `${source.id}.copy-${sequence}`
+  }
+
+  const clone = clonePrimitiveEntity(source)
+  return {
+    ...clone,
+    id,
+    name: `${source.name} copy`,
+    transform: {
+      ...clone.transform,
+      position: {
+        ...clone.transform.position,
+        eastMeters: clone.transform.position.eastMeters + 1,
+        northMeters: clone.transform.position.northMeters + 1,
+      },
+    },
   }
 }
 
@@ -253,6 +288,7 @@ function App() {
   const yardSceneRef = useRef<YardScene | null>(null)
   const [mode, setMode] = useState<ParcelMode>('rectangle')
   const [unit, setUnit] = useState<DisplayUnit>('meters')
+  const [selectedEntityId, setSelectedEntityId] = useState<string | null>(null)
   const [rectangle, setRectangle] = useState({
     eastWestMeters: 30,
     northSouthMeters: 40,
@@ -266,9 +302,17 @@ function App() {
   )
   const parcel = getParcelEntity(project, DEFAULT_PARCEL_ID).geometry
   const terrain = getTerrainEntity(project, DEFAULT_TERRAIN_ID)
-  const primitives = project.entities.filter(
-    (entity): entity is PrimitiveEntity => entity.kind === 'primitive',
+  const primitives = useMemo(
+    () => project.entities.filter(
+      (entity): entity is PrimitiveEntity => entity.kind === 'primitive',
+    ),
+    [project],
   )
+  const activeSelectedEntityId = primitives.some(
+    ({ id }) => id === selectedEntityId,
+  )
+    ? selectedEntityId
+    : null
   const terrainIssues = validateTerrain(terrain)
 
   const rectangleVertices = useMemo(
@@ -297,7 +341,9 @@ function App() {
       return
     }
 
-    const yardScene = createYardScene(viewport)
+    const yardScene = createYardScene(viewport, {
+      onSelectionChange: setSelectedEntityId,
+    })
     yardSceneRef.current = yardScene
 
     return () => {
@@ -311,7 +357,19 @@ function App() {
   }, [project])
 
   useEffect(() => {
+    yardSceneRef.current?.setSelectedEntityId(activeSelectedEntityId)
+  }, [activeSelectedEntityId])
+
+  useEffect(() => {
     const handleKeyDown = (event: KeyboardEvent) => {
+      const target = event.target
+      if (
+        target instanceof HTMLInputElement ||
+        target instanceof HTMLTextAreaElement ||
+        (target instanceof HTMLElement && target.isContentEditable)
+      ) {
+        return
+      }
       if (!(event.ctrlKey || event.metaKey) || event.key.toLowerCase() !== 'z') {
         return
       }
@@ -441,21 +499,29 @@ function App() {
       />
       <ObjectEditor
         primitives={primitives}
+        selectedEntityId={activeSelectedEntityId}
         unit={unit}
         canUndo={projectStore.canUndo()}
         canRedo={projectStore.canRedo()}
-        onAddPrimitive={(kind) => projectStore.dispatch({
-          type: 'primitive.add',
-          primitive: createUserPrimitive(kind, primitives),
-        })}
+        onAddPrimitive={(kind) => {
+          const primitive = createUserPrimitive(kind, primitives)
+          projectStore.dispatch({ type: 'primitive.add', primitive })
+          setSelectedEntityId(primitive.id)
+        }}
+        onSelect={setSelectedEntityId}
         onReplace={(primitive) => projectStore.dispatch({
           type: 'primitive.replace',
           primitive,
         })}
-        onRemove={(entityId) => projectStore.dispatch({
-          type: 'primitive.remove',
-          entityId,
-        })}
+        onDuplicate={(source) => {
+          const primitive = duplicateUserPrimitive(source, primitives)
+          projectStore.dispatch({ type: 'primitive.add', primitive })
+          setSelectedEntityId(primitive.id)
+        }}
+        onRemove={(entityId) => {
+          projectStore.dispatch({ type: 'primitive.remove', entityId })
+          setSelectedEntityId(null)
+        }}
         onUndo={projectStore.undo}
         onRedo={projectStore.redo}
       />

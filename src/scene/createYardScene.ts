@@ -73,10 +73,31 @@ function synchronizeEntityViews<
 
 export interface YardScene {
   updateProject(project: LandscapeProject): void
+  setSelectedEntityId(entityId: string | null): void
   dispose(): void
 }
 
-export function createYardScene(viewport: HTMLDivElement): YardScene {
+export interface YardSceneOptions {
+  readonly onSelectionChange?: (entityId: string | null) => void
+}
+
+export function getPrimitiveEntityIdFromObject(
+  object: THREE.Object3D,
+): string | null {
+  let candidate: THREE.Object3D | null = object
+  while (candidate) {
+    if (typeof candidate.userData.entityId === 'string') {
+      return candidate.userData.entityId
+    }
+    candidate = candidate.parent
+  }
+  return null
+}
+
+export function createYardScene(
+  viewport: HTMLDivElement,
+  options: YardSceneOptions = {},
+): YardScene {
   const scene = new THREE.Scene()
   scene.background = new THREE.Color(0xdde8f0)
 
@@ -131,6 +152,7 @@ export function createYardScene(viewport: HTMLDivElement): YardScene {
     string,
     SceneViewEntry<PrimitiveEntity, PrimitiveView>
   >()
+  let selectedEntityId: string | null = null
 
   const updateProject = (project: LandscapeProject) => {
     const parcelEntities = project.entities.filter(
@@ -150,6 +172,9 @@ export function createYardScene(viewport: HTMLDivElement): YardScene {
       primitiveEntities,
       createPrimitiveView,
     )
+    primitiveViews.forEach(({ view }, entityId) => {
+      view.setSelected(entityId === selectedEntityId)
+    })
     const activeTerrainIds = new Set(terrainEntities.map(({ id }) => id))
     terrainViews.forEach((entry, entityId) => {
       if (!activeTerrainIds.has(entityId)) {
@@ -200,6 +225,49 @@ export function createYardScene(viewport: HTMLDivElement): YardScene {
   const resizeObserver = new ResizeObserver(handleResize)
   resizeObserver.observe(viewport)
 
+  const raycaster = new THREE.Raycaster()
+  let pointerStart:
+    | { readonly pointerId: number; readonly x: number; readonly y: number }
+    | undefined
+  const handlePointerDown = (event: PointerEvent) => {
+    if (event.button === 0) {
+      pointerStart = {
+        pointerId: event.pointerId,
+        x: event.clientX,
+        y: event.clientY,
+      }
+    }
+  }
+  const handlePointerUp = (event: PointerEvent) => {
+    const start = pointerStart
+    pointerStart = undefined
+    if (
+      !start ||
+      start.pointerId !== event.pointerId ||
+      Math.hypot(event.clientX - start.x, event.clientY - start.y) > 4
+    ) {
+      return
+    }
+
+    const bounds = renderer.domElement.getBoundingClientRect()
+    const pointer = new THREE.Vector2(
+      ((event.clientX - bounds.left) / bounds.width) * 2 - 1,
+      -((event.clientY - bounds.top) / bounds.height) * 2 + 1,
+    )
+    raycaster.setFromCamera(pointer, camera)
+    const roots = [...primitiveViews.values()].map(({ view }) => view.object)
+    const intersection = raycaster.intersectObjects(roots, true)[0]
+    options.onSelectionChange?.(
+      intersection ? getPrimitiveEntityIdFromObject(intersection.object) : null,
+    )
+  }
+  const handlePointerCancel = () => {
+    pointerStart = undefined
+  }
+  renderer.domElement.addEventListener('pointerdown', handlePointerDown)
+  renderer.domElement.addEventListener('pointerup', handlePointerUp)
+  renderer.domElement.addEventListener('pointercancel', handlePointerCancel)
+
   renderer.setAnimationLoop(() => {
     controls.update()
     renderer.render(scene, camera)
@@ -207,10 +275,22 @@ export function createYardScene(viewport: HTMLDivElement): YardScene {
 
   return {
     updateProject,
+    setSelectedEntityId: (entityId) => {
+      selectedEntityId = entityId
+      primitiveViews.forEach(({ view }, primitiveEntityId) => {
+        view.setSelected(primitiveEntityId === selectedEntityId)
+      })
+    },
     dispose: () => {
       resizeObserver.disconnect()
       renderer.setAnimationLoop(null)
       controls.dispose()
+      renderer.domElement.removeEventListener('pointerdown', handlePointerDown)
+      renderer.domElement.removeEventListener('pointerup', handlePointerUp)
+      renderer.domElement.removeEventListener(
+        'pointercancel',
+        handlePointerCancel,
+      )
       parcelViews.forEach(({ view }) => view.dispose())
       parcelViews.clear()
       terrainViews.forEach(({ view }) => view.dispose())

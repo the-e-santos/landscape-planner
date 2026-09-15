@@ -68,12 +68,19 @@ export type PrimitiveGeometry =
   | PolygonExtrusionGeometry
   | CanopyGeometry
 
+export type SolarOptics =
+  | { readonly mode: 'ignored' }
+  | { readonly mode: 'opaque' }
+  | { readonly mode: 'transmissive'; readonly transmittance: number }
+
 export interface PrimitiveEntity {
   readonly id: EntityId
   readonly kind: 'primitive'
   readonly name: string
   readonly transform: ObjectTransform
   readonly geometry: PrimitiveGeometry
+  /** Missing on early schema-v1 primitives and treated as opaque. */
+  readonly solarOptics?: SolarOptics
 }
 
 export const DEFAULT_HOUSE_ID = 'primitive.house'
@@ -101,6 +108,7 @@ export function createDefaultHouseEntity(): PrimitiveEntity {
       heightMeters: 3,
       depthMeters: 8,
     },
+    solarOptics: { mode: 'opaque' },
   }
 }
 
@@ -120,7 +128,16 @@ export function clonePrimitiveEntity(
             footprint: entity.geometry.footprint.map((point) => ({ ...point })),
           }
         : { ...entity.geometry },
+    ...(entity.solarOptics
+      ? { solarOptics: { ...entity.solarOptics } }
+      : {}),
   }
+}
+
+export function getPrimitiveSolarOptics(
+  entity: PrimitiveEntity,
+): SolarOptics {
+  return entity.solarOptics ?? { mode: 'opaque' }
 }
 
 function polygonSignedArea(
@@ -226,5 +243,15 @@ export function validatePrimitiveEntity(entity: PrimitiveEntity): void {
 
   if (finiteValues.some((value) => !Number.isFinite(value))) {
     throw new Error('Primitive transform and dimensions must be finite numbers')
+  }
+
+  const solarOptics = getPrimitiveSolarOptics(entity)
+  if (
+    solarOptics.mode === 'transmissive' &&
+    (!Number.isFinite(solarOptics.transmittance) ||
+      solarOptics.transmittance < 0 ||
+      solarOptics.transmittance > 1)
+  ) {
+    throw new Error('Solar transmittance must be between zero and one')
   }
 }

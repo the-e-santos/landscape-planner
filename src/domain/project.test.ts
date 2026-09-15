@@ -83,6 +83,12 @@ describe('project model', () => {
         DEFAULT_HOUSE_ID,
       ).geometry.kind,
     ).toBe('box')
+    expect(
+      getPrimitiveEntity(
+        deserializeProject(serializeProject(project)),
+        DEFAULT_HOUSE_ID,
+      ).solarOptics,
+    ).toEqual({ mode: 'opaque' })
   })
 
   it('rejects JSON with an unsupported schema version', () => {

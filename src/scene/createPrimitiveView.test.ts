@@ -132,4 +132,26 @@ describe('primitive scene view', () => {
 
     view.dispose()
   })
+
+  it('highlights selection and retains it through a view update', () => {
+    const entity = createDefaultHouseEntity()
+    const view = createPrimitiveView(entity)
+    const getMaterial = () => {
+      const mesh = view.object.children[0]
+      expect(mesh).toBeInstanceOf(THREE.Mesh)
+      return (mesh as THREE.Mesh).material as THREE.MeshStandardMaterial
+    }
+
+    expect(getMaterial().emissiveIntensity).toBe(0)
+    view.setSelected(true)
+    expect(getMaterial().emissiveIntensity).toBe(0.7)
+    expect(getMaterial().emissive.getHex()).toBe(0x3d6f48)
+
+    view.update({ ...entity, name: 'Updated while selected' })
+    expect(getMaterial().emissiveIntensity).toBe(0.7)
+
+    view.setSelected(false)
+    expect(getMaterial().emissiveIntensity).toBe(0)
+    view.dispose()
+  })
 })

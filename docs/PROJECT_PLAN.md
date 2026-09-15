@@ -546,6 +546,8 @@ Deliver:
 - select by clicking
 - translate, rotate, and resize
 - numeric property inspector
+- editable solar-occlusion mode and constant transmittance, kept independent
+  from visual opacity
 - snapping appropriate to the current task
 - undo/redo at the command level
 
@@ -565,7 +567,8 @@ Deliver:
 - validated solar position
 - point query for direct incidence
 - CPU ray visibility
-- opaque and constant-transmittance occluders
+- opaque and constant-transmittance occluders using the persisted primitive
+  solar-optics settings
 - small analytical fixture suite
 - numerical result panel at a selected date and solar time
 

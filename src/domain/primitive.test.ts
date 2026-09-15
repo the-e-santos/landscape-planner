@@ -1,6 +1,8 @@
 import { describe, expect, it } from 'vitest'
 import {
   clonePrimitiveEntity,
+  createDefaultHouseEntity,
+  getPrimitiveSolarOptics,
   validatePrimitiveEntity,
   type PrimitiveEntity,
   type PrimitiveGeometry,
@@ -79,5 +81,44 @@ describe('primitive domain model', () => {
       expect(clone.geometry.footprint).not.toBe(original.geometry.footprint)
       expect(clone.geometry.footprint[0]).not.toBe(original.geometry.footprint[0])
     }
+  })
+
+  it('defaults early schema-v1 primitives without solar optics to opaque', () => {
+    const primitive = createPrimitive(validGeometries[0])
+
+    expect(getPrimitiveSolarOptics(primitive)).toEqual({ mode: 'opaque' })
+    expect(createDefaultHouseEntity().solarOptics).toEqual({ mode: 'opaque' })
+  })
+
+  it('accepts bounded transmittance and rejects values outside zero to one', () => {
+    const primitive = createPrimitive(validGeometries[4])
+
+    expect(() => validatePrimitiveEntity({
+      ...primitive,
+      solarOptics: { mode: 'transmissive', transmittance: 0 },
+    })).not.toThrow()
+    expect(() => validatePrimitiveEntity({
+      ...primitive,
+      solarOptics: { mode: 'transmissive', transmittance: 1 },
+    })).not.toThrow()
+    expect(() => validatePrimitiveEntity({
+      ...primitive,
+      solarOptics: { mode: 'transmissive', transmittance: 1.01 },
+    })).toThrow('Solar transmittance must be between zero and one')
+    expect(() => validatePrimitiveEntity({
+      ...primitive,
+      solarOptics: { mode: 'transmissive', transmittance: Number.NaN },
+    })).toThrow('Solar transmittance must be between zero and one')
+  })
+
+  it('clones solar optics independently from the source entity', () => {
+    const original: PrimitiveEntity = {
+      ...createPrimitive(validGeometries[4]),
+      solarOptics: { mode: 'transmissive', transmittance: 0.35 },
+    }
+    const clone = clonePrimitiveEntity(original)
+
+    expect(clone.solarOptics).toEqual(original.solarOptics)
+    expect(clone.solarOptics).not.toBe(original.solarOptics)
   })
 })

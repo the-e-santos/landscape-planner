@@ -84,6 +84,94 @@
   margin-top: 10px;
 }
 
+.object-selection {
+  display: grid;
+  grid-template-columns: auto minmax(0, 1fr);
+  gap: 10px;
+  align-items: center;
+  margin-top: 12px;
+  font-size: 0.76rem;
+  font-weight: 700;
+}
+
+.object-selection select,
+.object-name-input {
+  min-width: 0;
+  padding: 7px 9px;
+  border: 1px solid #c5cec5;
+  border-radius: 7px;
+  color: #1f2d24;
+  background: #fff;
+}
+
+.object-inspector {
+  margin-top: 12px;
+  padding-top: 10px;
+  border-top: 1px solid #d9dfd8;
+}
+
+.object-inspector code {
+  display: block;
+  overflow: hidden;
+  margin: 0 0 8px;
+  color: #778178;
+  font-size: 0.65rem;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.object-name-input {
+  width: 158px;
+  box-sizing: border-box;
+}
+
+.object-actions {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 8px;
+  margin-top: 12px;
+}
+
+.object-actions button {
+  padding: 7px;
+  border: 1px solid #b8c7ba;
+  border-radius: 7px;
+  color: #315f3f;
+  background: #f5f8f4;
+  font-size: 0.72rem;
+  font-weight: 700;
+}
+
+.object-actions button.danger {
+  border-color: #d5b3a1;
+  color: #7a3d25;
+  background: #fff8f4;
+}
+
+.object-empty-state {
+  margin: 12px 0 0;
+  color: #5c6c61;
+  font-size: 0.75rem;
+  line-height: 1.45;
+}
+
+.solar-optics-editor {
+  margin-top: 14px;
+  padding-top: 10px;
+  border-top: 1px solid #d9dfd8;
+}
+
+.solar-optics-editor h3 {
+  margin: 0 0 7px;
+  font-size: 0.78rem;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+}
+
+.solar-optics-editor .field-note + .field-note {
+  margin-top: 5px;
+}
+
 .object-card {
   padding: 9px 11px;
   border: 1px solid #d9dfd8;

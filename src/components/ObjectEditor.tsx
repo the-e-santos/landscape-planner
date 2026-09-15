@@ -2,6 +2,7 @@ import type {
   PrimitiveEntity,
   PrimitiveGeometry,
 } from '../domain/primitive'
+import { getPrimitiveSolarOptics } from '../domain/primitive'
 import type { DisplayUnit } from '../domain/units'
 import { LengthInput } from './LengthInput'
 
@@ -142,13 +143,99 @@ function GeometryEditor({
   }
 }
 
+interface SolarOpticsEditorProps {
+  readonly primitive: PrimitiveEntity
+  readonly onReplace: (primitive: PrimitiveEntity) => void
+}
+
+function SolarOpticsEditor({
+  primitive,
+  onReplace,
+}: SolarOpticsEditorProps) {
+  const solarOptics = getPrimitiveSolarOptics(primitive)
+  const setMode = (mode: 'ignored' | 'opaque' | 'transmissive') => {
+    onReplace({
+      ...primitive,
+      solarOptics: mode === 'transmissive'
+        ? {
+            mode,
+            transmittance: solarOptics.mode === 'transmissive'
+              ? solarOptics.transmittance
+              : 0.5,
+          }
+        : { mode },
+    })
+  }
+
+  return (
+    <section className="solar-optics-editor" aria-label="Solar optics">
+      <h3>Solar optics</h3>
+      <label className="field" htmlFor={`${primitive.id}-solar-mode`}>
+        <span>Occlusion mode</span>
+        <select
+          id={`${primitive.id}-solar-mode`}
+          value={solarOptics.mode}
+          onChange={(event) => setMode(
+            event.currentTarget.value as typeof solarOptics.mode,
+          )}
+        >
+          <option value="opaque">Opaque</option>
+          <option value="transmissive">Transmissive</option>
+          <option value="ignored">Ignored</option>
+        </select>
+      </label>
+      {solarOptics.mode === 'transmissive' ? (
+        <>
+          <label className="field" htmlFor={`${primitive.id}-transmittance`}>
+            <span>Transmittance</span>
+            <span className="number-input">
+              <input
+                id={`${primitive.id}-transmittance`}
+                type="number"
+                min="0"
+                max="100"
+                step="5"
+                value={Number((solarOptics.transmittance * 100).toFixed(3))}
+                onChange={(event) => {
+                  const percent = event.currentTarget.valueAsNumber
+                  if (Number.isFinite(percent) && percent >= 0 && percent <= 100) {
+                    onReplace({
+                      ...primitive,
+                      solarOptics: {
+                        mode: 'transmissive',
+                        transmittance: percent / 100,
+                      },
+                    })
+                  }
+                }}
+              />
+              <span>%</span>
+            </span>
+          </label>
+          <p className="field-note">
+            Non-transmitted: {Number(
+              ((1 - solarOptics.transmittance) * 100).toFixed(3),
+            )}%
+          </p>
+        </>
+      ) : null}
+      <p className="field-note">
+        Solar behavior is independent of visual opacity.
+      </p>
+    </section>
+  )
+}
+
 interface ObjectEditorProps {
   readonly primitives: readonly PrimitiveEntity[]
+  readonly selectedEntityId: string | null
   readonly unit: DisplayUnit
   readonly canUndo: boolean
   readonly canRedo: boolean
   readonly onAddPrimitive: (kind: PrimitiveCreationKind) => void
+  readonly onSelect: (entityId: string | null) => void
   readonly onReplace: (primitive: PrimitiveEntity) => void
+  readonly onDuplicate: (primitive: PrimitiveEntity) => void
   readonly onRemove: (entityId: string) => void
   readonly onUndo: () => void
   readonly onRedo: () => void
@@ -168,15 +255,42 @@ const creationOptions: readonly {
 
 export function ObjectEditor({
   primitives,
+  selectedEntityId,
   unit,
   canUndo,
   canRedo,
   onAddPrimitive,
+  onSelect,
   onReplace,
+  onDuplicate,
   onRemove,
   onUndo,
   onRedo,
 }: ObjectEditorProps) {
+  const selected = primitives.find(({ id }) => id === selectedEntityId)
+  const replacePosition = (
+    primitive: PrimitiveEntity,
+    key: keyof PrimitiveEntity['transform']['position'],
+    value: number,
+  ) => onReplace({
+    ...primitive,
+    transform: {
+      ...primitive.transform,
+      position: { ...primitive.transform.position, [key]: value },
+    },
+  })
+  const replaceRotation = (
+    primitive: PrimitiveEntity,
+    key: keyof PrimitiveEntity['transform']['rotation'],
+    value: number,
+  ) => onReplace({
+    ...primitive,
+    transform: {
+      ...primitive.transform,
+      rotation: { ...primitive.transform.rotation, [key]: value },
+    },
+  })
+
   return (
     <aside className="object-panel" aria-label="Object editor">
       <div className="object-toolbar">
@@ -195,90 +309,113 @@ export function ObjectEditor({
           </button>
         ))}
       </div>
-      <div className="object-list">
-        {primitives.map((primitive) => {
-          const replacePosition = (
-            key: keyof PrimitiveEntity['transform']['position'],
-            value: number,
-          ) => onReplace({
-            ...primitive,
-            transform: {
-              ...primitive.transform,
-              position: { ...primitive.transform.position, [key]: value },
-            },
-          })
-          const replaceRotation = (
-            key: keyof PrimitiveEntity['transform']['rotation'],
-            value: number,
-          ) => onReplace({
-            ...primitive,
-            transform: {
-              ...primitive.transform,
-              rotation: { ...primitive.transform.rotation, [key]: value },
-            },
-          })
-
-          return (
-            <details className="object-card" key={primitive.id}>
-              <summary>{primitive.name}</summary>
-              <code>{primitive.id}</code>
+      <label className="object-selection" htmlFor="selected-object">
+        <span>Selected</span>
+        <select
+          id="selected-object"
+          value={selected?.id ?? ''}
+          onChange={(event) => onSelect(event.currentTarget.value || null)}
+        >
+          <option value="">No object</option>
+          {primitives.map((primitive) => (
+            <option key={primitive.id} value={primitive.id}>
+              {primitive.name}
+            </option>
+          ))}
+        </select>
+      </label>
+      {selected ? (
+        <section className="object-inspector" aria-label="Selected object properties">
+          <label className="field" htmlFor={`${selected.id}-name`}>
+            <span>Name</span>
+            <input
+              key={`${selected.id}:${selected.name}`}
+              id={`${selected.id}-name`}
+              className="object-name-input"
+              type="text"
+              defaultValue={selected.name}
+              onKeyDown={(event) => {
+                if (event.key === 'Enter') {
+                  event.currentTarget.blur()
+                }
+              }}
+              onBlur={(event) => {
+                const name = event.currentTarget.value.trim()
+                if (name && name !== selected.name) {
+                  onReplace({ ...selected, name })
+                } else {
+                  event.currentTarget.value = selected.name
+                }
+              }}
+            />
+          </label>
+          <code>{selected.id}</code>
               <LengthInput
-                id={`${primitive.id}-east`}
+                id={`${selected.id}-east`}
                 label="Center east"
-                meters={primitive.transform.position.eastMeters}
+                meters={selected.transform.position.eastMeters}
                 unit={unit}
-                onChange={(value) => replacePosition('eastMeters', value)}
+                onChange={(value) => replacePosition(selected, 'eastMeters', value)}
               />
               <LengthInput
-                id={`${primitive.id}-elevation`}
+                id={`${selected.id}-elevation`}
                 label="Center elevation"
-                meters={primitive.transform.position.elevationMeters}
+                meters={selected.transform.position.elevationMeters}
                 unit={unit}
-                onChange={(value) => replacePosition('elevationMeters', value)}
+                onChange={(value) => replacePosition(selected, 'elevationMeters', value)}
               />
               <LengthInput
-                id={`${primitive.id}-north`}
+                id={`${selected.id}-north`}
                 label="Center north"
-                meters={primitive.transform.position.northMeters}
+                meters={selected.transform.position.northMeters}
                 unit={unit}
-                onChange={(value) => replacePosition('northMeters', value)}
+                onChange={(value) => replacePosition(selected, 'northMeters', value)}
               />
               <AngleInput
-                id={`${primitive.id}-rotation-x`}
+                id={`${selected.id}-rotation-x`}
                 label="Rotate X"
-                radians={primitive.transform.rotation.xRadians}
-                onChange={(value) => replaceRotation('xRadians', value)}
+                radians={selected.transform.rotation.xRadians}
+                onChange={(value) => replaceRotation(selected, 'xRadians', value)}
               />
               <AngleInput
-                id={`${primitive.id}-rotation-y`}
+                id={`${selected.id}-rotation-y`}
                 label="Rotate Y"
-                radians={primitive.transform.rotation.yRadians}
-                onChange={(value) => replaceRotation('yRadians', value)}
+                radians={selected.transform.rotation.yRadians}
+                onChange={(value) => replaceRotation(selected, 'yRadians', value)}
               />
               <AngleInput
-                id={`${primitive.id}-rotation-z`}
+                id={`${selected.id}-rotation-z`}
                 label="Rotate Z"
-                radians={primitive.transform.rotation.zRadians}
-                onChange={(value) => replaceRotation('zRadians', value)}
+                radians={selected.transform.rotation.zRadians}
+                onChange={(value) => replaceRotation(selected, 'zRadians', value)}
               />
               <GeometryEditor
-                primitive={primitive}
+                primitive={selected}
                 unit={unit}
                 onReplace={onReplace}
               />
-              <button
-                type="button"
-                className="remove-spot-button"
-                onClick={() => onRemove(primitive.id)}
-              >
-                Remove {primitive.geometry.kind === 'polygonExtrusion'
-                  ? 'extrusion'
-                  : primitive.geometry.kind}
-              </button>
-            </details>
-          )
-        })}
-      </div>
+              <SolarOpticsEditor
+                primitive={selected}
+                onReplace={onReplace}
+              />
+          <div className="object-actions">
+            <button type="button" onClick={() => onDuplicate(selected)}>
+              Duplicate
+            </button>
+            <button
+              type="button"
+              className="danger"
+              onClick={() => onRemove(selected.id)}
+            >
+              Delete
+            </button>
+          </div>
+        </section>
+      ) : (
+        <p className="object-empty-state">
+          Click an object in the scene or choose one above to inspect it.
+        </p>
+      )}
     </aside>
   )
 }
