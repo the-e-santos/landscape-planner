@@ -1,3 +1,4 @@
+import { useState } from 'react'
 import {
   getTerrainLinearConstraints,
   type SpotElevation,
@@ -57,6 +58,7 @@ export function TerrainEditor({
   onReplaceConstraint,
   onRemoveConstraint,
 }: TerrainEditorProps) {
+  const [isCollapsed, setIsCollapsed] = useState(false)
   const constraints = getTerrainLinearConstraints(terrain)
   const updateSpot = <Field extends keyof SpotElevation>(
     spot: SpotElevation,
@@ -102,22 +104,41 @@ export function TerrainEditor({
   }
 
   return (
-    <aside className="terrain-panel" aria-label="Terrain editor">
-      <header>
+    <aside
+      className={`terrain-panel${isCollapsed ? ' panel-collapsed' : ''}`}
+      aria-label="Terrain editor"
+    >
+      <header className="panel-header">
         <div className="section-heading">
           <div>
             <p className="eyebrow">Terrain inputs</p>
             <h1>Spot elevations</h1>
           </div>
-          <button className="primary-small-button" type="button" onClick={onAddSpot}>
-            Add spot
-          </button>
+          <div className="panel-header-actions">
+            {!isCollapsed && (
+              <button className="primary-small-button" type="button" onClick={onAddSpot}>
+                Add spot
+              </button>
+            )}
+            <button
+              className="panel-collapse-button"
+              type="button"
+              aria-expanded={!isCollapsed}
+              aria-controls="terrain-editor-content"
+              onClick={() => setIsCollapsed((collapsed) => !collapsed)}
+            >
+              {isCollapsed ? 'Expand' : 'Collapse'}
+            </button>
+          </div>
         </div>
-        <p className="panel-intro">
-          The surface is derived from these measurements.
-        </p>
+        {!isCollapsed && (
+          <p className="panel-intro">
+            The surface is derived from these measurements.
+          </p>
+        )}
       </header>
 
+      <div id="terrain-editor-content" hidden={isCollapsed}>
       {issues.length > 0 ? (
         <section className="terrain-validation" aria-label="Terrain validation">
           <strong>Surface needs attention</strong>
@@ -405,6 +426,7 @@ export function TerrainEditor({
           </div>
         )}
       </section>
+      </div>
     </aside>
   )
 }

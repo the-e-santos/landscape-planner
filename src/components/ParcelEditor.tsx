@@ -1,3 +1,4 @@
+import { useState } from 'react'
 import type { ParcelPoint } from '../domain/parcel'
 import type { DisplayUnit } from '../domain/units'
 import { LengthInput } from './LengthInput'
@@ -40,6 +41,7 @@ export function ParcelEditor({
   onResetPolygon,
   onUncertaintyChange,
 }: ParcelEditorProps) {
+  const [isCollapsed, setIsCollapsed] = useState(false)
   const updateVertex = (
     index: number,
     field: keyof ParcelPoint,
@@ -53,15 +55,32 @@ export function ParcelEditor({
   }
 
   return (
-    <aside className="parcel-panel" aria-label="Parcel editor">
-      <header>
-        <p className="eyebrow">Landscape planner</p>
-        <h1>Parcel outline</h1>
-        <p className="panel-intro">
-          Start with rough dimensions, then refine measurements point by point.
-        </p>
+    <aside
+      className={`parcel-panel${isCollapsed ? ' panel-collapsed' : ''}`}
+      aria-label="Parcel editor"
+    >
+      <header className="panel-header">
+        <div>
+          <p className="eyebrow">Landscape planner</p>
+          <h1>Parcel outline</h1>
+          {!isCollapsed && (
+            <p className="panel-intro">
+              Start with rough dimensions, then refine measurements point by point.
+            </p>
+          )}
+        </div>
+        <button
+          className="panel-collapse-button"
+          type="button"
+          aria-expanded={!isCollapsed}
+          aria-controls="parcel-editor-content"
+          onClick={() => setIsCollapsed((collapsed) => !collapsed)}
+        >
+          {isCollapsed ? 'Expand' : 'Collapse'}
+        </button>
       </header>
 
+      <div id="parcel-editor-content" hidden={isCollapsed}>
       <fieldset className="segmented-field">
         <legend>Shape</legend>
         <div className="segmented-control">
@@ -198,6 +217,7 @@ export function ParcelEditor({
         <span><i className="legend-swatch boundary" /> Estimated boundary</span>
         <span><i className="legend-swatch north" /> True north (−Z)</span>
       </footer>
+      </div>
     </aside>
   )
 }
