@@ -1,6 +1,9 @@
 import { useEffect, useMemo, useRef, useState, useSyncExternalStore } from 'react'
 import { ParcelEditor, type ParcelMode } from './components/ParcelEditor'
-import { ObjectEditor } from './components/ObjectEditor'
+import {
+  ObjectEditor,
+  type PrimitiveCreationKind,
+} from './components/ObjectEditor'
 import { TerrainEditor } from './components/TerrainEditor'
 import {
   createRectangleVertices,
@@ -14,7 +17,7 @@ import {
   getTerrainEntity,
 } from './domain/project'
 import { createProjectStore } from './domain/projectStore'
-import type { PrimitiveEntity } from './domain/primitive'
+import type { PrimitiveEntity, PrimitiveGeometry } from './domain/primitive'
 import {
   DEFAULT_TERRAIN_ID,
   getTerrainLinearConstraints,
@@ -160,33 +163,88 @@ function createUserRetainingWall(terrain: TerrainEntity): TerrainRetainingWall {
   }
 }
 
-function createUserBox(primitives: readonly PrimitiveEntity[]): PrimitiveEntity {
+function createUserPrimitive(
+  kind: PrimitiveCreationKind,
+  primitives: readonly PrimitiveEntity[],
+): PrimitiveEntity {
+  const idKind = kind === 'polygonExtrusion' ? 'extrusion' : kind
   const usedIds = new Set(primitives.map(({ id }) => id))
   let sequence = 1
-  let id = `primitive.box.user-${sequence}`
+  let id = `primitive.${idKind}.user-${sequence}`
   while (usedIds.has(id)) {
     sequence += 1
-    id = `primitive.box.user-${sequence}`
+    id = `primitive.${idKind}.user-${sequence}`
   }
+
+  let geometry: PrimitiveGeometry
+  let elevationMeters: number
+  switch (kind) {
+    case 'box':
+      geometry = { kind: 'box', widthMeters: 1, heightMeters: 1, depthMeters: 1 }
+      elevationMeters = 0.5
+      break
+    case 'cylinder':
+      geometry = { kind: 'cylinder', radiusMeters: 0.5, heightMeters: 2 }
+      elevationMeters = 1
+      break
+    case 'wall':
+    case 'fence':
+      geometry = {
+        kind: 'wall',
+        structure: kind,
+        lengthMeters: 4,
+        heightMeters: kind === 'wall' ? 2 : 1.8,
+        thicknessMeters: kind === 'wall' ? 0.25 : 0.08,
+      }
+      elevationMeters = geometry.heightMeters / 2
+      break
+    case 'polygonExtrusion':
+      geometry = {
+        kind: 'polygonExtrusion',
+        footprint: [
+          { eastMeters: -1.2, northMeters: -0.8 },
+          { eastMeters: 1.2, northMeters: -0.8 },
+          { eastMeters: 0.8, northMeters: 1 },
+          { eastMeters: -1, northMeters: 1.2 },
+        ],
+        heightMeters: 0.6,
+      }
+      elevationMeters = 0.3
+      break
+    case 'canopy':
+      geometry = {
+        kind: 'canopy',
+        eastRadiusMeters: 2,
+        verticalRadiusMeters: 1.5,
+        northRadiusMeters: 2,
+      }
+      elevationMeters = 2.5
+      break
+  }
+
+  const labels: Record<PrimitiveCreationKind, string> = {
+    box: 'Box',
+    cylinder: 'Cylinder',
+    wall: 'Wall',
+    fence: 'Fence',
+    polygonExtrusion: 'Polygon extrusion',
+    canopy: 'Canopy',
+  }
+  const placementIndex = primitives.length
 
   return {
     id,
     kind: 'primitive',
-    name: `Box ${sequence}`,
+    name: `${labels[kind]} ${sequence}`,
     transform: {
       position: {
-        eastMeters: sequence * 2,
-        elevationMeters: 0.5,
-        northMeters: 0,
+        eastMeters: -10 + (placementIndex % 6) * 4,
+        elevationMeters,
+        northMeters: -8 + Math.floor(placementIndex / 6) * 4,
       },
       rotation: { xRadians: 0, yRadians: 0, zRadians: 0 },
     },
-    geometry: {
-      kind: 'box',
-      widthMeters: 1,
-      heightMeters: 1,
-      depthMeters: 1,
-    },
+    geometry,
   }
 }
 
@@ -386,9 +444,9 @@ function App() {
         unit={unit}
         canUndo={projectStore.canUndo()}
         canRedo={projectStore.canRedo()}
-        onAddBox={() => projectStore.dispatch({
+        onAddPrimitive={(kind) => projectStore.dispatch({
           type: 'primitive.add',
-          primitive: createUserBox(primitives),
+          primitive: createUserPrimitive(kind, primitives),
         })}
         onReplace={(primitive) => projectStore.dispatch({
           type: 'primitive.replace',

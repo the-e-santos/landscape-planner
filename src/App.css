@@ -60,6 +60,24 @@
   font-weight: 700;
 }
 
+.object-create-toolbar {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 5px;
+  margin-top: 10px;
+}
+
+.object-create-toolbar button {
+  flex: 1 0 auto;
+  padding: 5px 7px;
+  border: 1px solid #ccd6cd;
+  border-radius: 6px;
+  color: #315f3f;
+  background: #eef3ed;
+  font-size: 0.66rem;
+  font-weight: 700;
+}
+
 .object-list {
   display: grid;
   gap: 8px;

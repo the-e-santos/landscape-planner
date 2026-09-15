@@ -26,12 +26,54 @@ export interface BoxGeometry {
   readonly depthMeters: number
 }
 
+export interface CylinderGeometry {
+  readonly kind: 'cylinder'
+  readonly radiusMeters: number
+  readonly heightMeters: number
+}
+
+export type WallStructure = 'wall' | 'fence'
+
+export interface WallGeometry {
+  readonly kind: 'wall'
+  readonly structure: WallStructure
+  readonly lengthMeters: number
+  readonly heightMeters: number
+  readonly thicknessMeters: number
+}
+
+export interface PolygonExtrusionPoint {
+  readonly eastMeters: number
+  readonly northMeters: number
+}
+
+export interface PolygonExtrusionGeometry {
+  readonly kind: 'polygonExtrusion'
+  /** Counterclockwise local footprint vertices viewed from above. */
+  readonly footprint: readonly PolygonExtrusionPoint[]
+  readonly heightMeters: number
+}
+
+export interface CanopyGeometry {
+  readonly kind: 'canopy'
+  readonly eastRadiusMeters: number
+  readonly verticalRadiusMeters: number
+  readonly northRadiusMeters: number
+}
+
+export type PrimitiveGeometry =
+  | BoxGeometry
+  | CylinderGeometry
+  | WallGeometry
+  | PolygonExtrusionGeometry
+  | CanopyGeometry
+
 export interface PrimitiveEntity {
   readonly id: EntityId
   readonly kind: 'primitive'
   readonly name: string
   readonly transform: ObjectTransform
-  readonly geometry: BoxGeometry
+  readonly geometry: PrimitiveGeometry
 }
 
 export const DEFAULT_HOUSE_ID = 'primitive.house'
@@ -71,8 +113,24 @@ export function clonePrimitiveEntity(
       position: { ...entity.transform.position },
       rotation: { ...entity.transform.rotation },
     },
-    geometry: { ...entity.geometry },
+    geometry:
+      entity.geometry.kind === 'polygonExtrusion'
+        ? {
+            ...entity.geometry,
+            footprint: entity.geometry.footprint.map((point) => ({ ...point })),
+          }
+        : { ...entity.geometry },
   }
+}
+
+function polygonSignedArea(
+  footprint: readonly PolygonExtrusionPoint[],
+): number {
+  return footprint.reduce((area, point, index) => {
+    const next = footprint[(index + 1) % footprint.length]
+    return area + point.eastMeters * next.northMeters -
+      next.eastMeters * point.northMeters
+  }, 0) / 2
 }
 
 export function validatePrimitiveEntity(entity: PrimitiveEntity): void {
@@ -83,20 +141,90 @@ export function validatePrimitiveEntity(entity: PrimitiveEntity): void {
     entity.transform.rotation.xRadians,
     entity.transform.rotation.yRadians,
     entity.transform.rotation.zRadians,
-    entity.geometry.widthMeters,
-    entity.geometry.heightMeters,
-    entity.geometry.depthMeters,
   ]
+
+  switch (entity.geometry.kind) {
+    case 'box':
+      finiteValues.push(
+        entity.geometry.widthMeters,
+        entity.geometry.heightMeters,
+        entity.geometry.depthMeters,
+      )
+      if (
+        entity.geometry.widthMeters <= 0 ||
+        entity.geometry.heightMeters <= 0 ||
+        entity.geometry.depthMeters <= 0
+      ) {
+        throw new Error('Primitive dimensions must be greater than zero')
+      }
+      break
+
+    case 'cylinder':
+      finiteValues.push(
+        entity.geometry.radiusMeters,
+        entity.geometry.heightMeters,
+      )
+      if (
+        entity.geometry.radiusMeters <= 0 ||
+        entity.geometry.heightMeters <= 0
+      ) {
+        throw new Error('Primitive dimensions must be greater than zero')
+      }
+      break
+
+    case 'wall':
+      finiteValues.push(
+        entity.geometry.lengthMeters,
+        entity.geometry.heightMeters,
+        entity.geometry.thicknessMeters,
+      )
+      if (
+        entity.geometry.lengthMeters <= 0 ||
+        entity.geometry.heightMeters <= 0 ||
+        entity.geometry.thicknessMeters <= 0
+      ) {
+        throw new Error('Primitive dimensions must be greater than zero')
+      }
+      break
+
+    case 'polygonExtrusion':
+      finiteValues.push(
+        entity.geometry.heightMeters,
+        ...entity.geometry.footprint.flatMap((point) => [
+          point.eastMeters,
+          point.northMeters,
+        ]),
+      )
+      if (entity.geometry.heightMeters <= 0) {
+        throw new Error('Primitive dimensions must be greater than zero')
+      }
+      if (
+        entity.geometry.footprint.length < 3 ||
+        polygonSignedArea(entity.geometry.footprint) < 1e-9
+      ) {
+        throw new Error(
+          'Polygon extrusion footprint must be counterclockwise with a nonzero area',
+        )
+      }
+      break
+
+    case 'canopy':
+      finiteValues.push(
+        entity.geometry.eastRadiusMeters,
+        entity.geometry.verticalRadiusMeters,
+        entity.geometry.northRadiusMeters,
+      )
+      if (
+        entity.geometry.eastRadiusMeters <= 0 ||
+        entity.geometry.verticalRadiusMeters <= 0 ||
+        entity.geometry.northRadiusMeters <= 0
+      ) {
+        throw new Error('Primitive dimensions must be greater than zero')
+      }
+      break
+  }
 
   if (finiteValues.some((value) => !Number.isFinite(value))) {
     throw new Error('Primitive transform and dimensions must be finite numbers')
-  }
-
-  if (
-    entity.geometry.widthMeters <= 0 ||
-    entity.geometry.heightMeters <= 0 ||
-    entity.geometry.depthMeters <= 0
-  ) {
-    throw new Error('Primitive dimensions must be greater than zero')
   }
 }

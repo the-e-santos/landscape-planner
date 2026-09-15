@@ -13,7 +13,11 @@ import {
   serializeProject,
 } from './projectSerialization'
 import { createProjectStore } from './projectStore'
-import { DEFAULT_HOUSE_ID, type PrimitiveEntity } from './primitive'
+import {
+  DEFAULT_HOUSE_ID,
+  type PrimitiveEntity,
+  type PrimitiveGeometry,
+} from './primitive'
 import {
   DEFAULT_TERRAIN_ID,
   type SpotElevation,
@@ -85,6 +89,52 @@ describe('project model', () => {
     expect(() =>
       deserializeProject(JSON.stringify({ schemaVersion: 2 })),
     ).toThrow('Unsupported project schema version')
+  })
+
+  it('round-trips every supported primitive geometry variant', () => {
+    const geometries: readonly PrimitiveGeometry[] = [
+      { kind: 'cylinder', radiusMeters: 0.7, heightMeters: 2.5 },
+      {
+        kind: 'wall',
+        structure: 'fence',
+        lengthMeters: 5,
+        heightMeters: 1.8,
+        thicknessMeters: 0.08,
+      },
+      {
+        kind: 'polygonExtrusion',
+        footprint: [
+          { eastMeters: -1, northMeters: -1 },
+          { eastMeters: 2, northMeters: -1 },
+          { eastMeters: 0, northMeters: 2 },
+        ],
+        heightMeters: 0.75,
+      },
+      {
+        kind: 'canopy',
+        eastRadiusMeters: 2.2,
+        verticalRadiusMeters: 1.4,
+        northRadiusMeters: 1.8,
+      },
+    ]
+    const base = createDefaultProject()
+    const primitives: PrimitiveEntity[] = geometries.map((geometry, index) => ({
+      id: `primitive.catalog.${index + 1}`,
+      kind: 'primitive',
+      name: `Catalog primitive ${index + 1}`,
+      transform: {
+        position: {
+          eastMeters: index,
+          elevationMeters: 1,
+          northMeters: index,
+        },
+        rotation: { xRadians: 0, yRadians: index * 0.1, zRadians: 0 },
+      },
+      geometry,
+    }))
+    const project = { ...base, entities: [...base.entities, ...primitives] }
+
+    expect(deserializeProject(serializeProject(project))).toEqual(project)
   })
 
   it('updates an entity by ID without mutating the previous project', () => {
@@ -256,7 +306,7 @@ describe('project model', () => {
 
   it('adds, replaces, and removes a primitive by stable ID', () => {
     const original = createDefaultProject()
-    const primitive: PrimitiveEntity = {
+    const primitive = {
       id: 'primitive.box.test',
       kind: 'primitive',
       name: 'Test box',
@@ -270,7 +320,7 @@ describe('project model', () => {
         heightMeters: 1,
         depthMeters: 2,
       },
-    }
+    } satisfies PrimitiveEntity
     const withPrimitive = applyProjectCommand(original, {
       type: 'primitive.add',
       primitive,

@@ -15,8 +15,12 @@ cannot be the authoritative representation.
 
 - Store primitive entities in the versioned project entity collection with a
   `primitive` discriminator and stable entity ID.
-- Represent box geometry using positive width, height, and depth values in
-  meters. Geometry is centered on its local origin.
+- Represent boxes, cylinders, wall/fence segments, polygon extrusions, and
+  ellipsoidal canopies as a discriminated geometry union with positive SI
+  dimensions. Geometry is centered on its local origin.
+- Store wall and fence semantics separately from their shared segment dimensions.
+  Store polygon-extrusion footprint vertices in the primitive's local horizontal
+  coordinate frame; triangulation is derived by the scene view.
 - Store the local-origin position using named `eastMeters`, `elevationMeters`,
   and `northMeters` values. Scene projection maps these to `(x, y, z)` as
   `(east, elevation, -north)`.

@@ -1,6 +1,11 @@
-import type { PrimitiveEntity } from '../domain/primitive'
+import type {
+  PrimitiveEntity,
+  PrimitiveGeometry,
+} from '../domain/primitive'
 import type { DisplayUnit } from '../domain/units'
 import { LengthInput } from './LengthInput'
+
+export type PrimitiveCreationKind = PrimitiveGeometry['kind'] | 'fence'
 
 interface AngleInputProps {
   readonly id: string
@@ -32,24 +37,141 @@ function AngleInput({ id, label, radians, onChange }: AngleInputProps) {
   )
 }
 
+interface GeometryEditorProps {
+  readonly primitive: PrimitiveEntity
+  readonly unit: DisplayUnit
+  readonly onReplace: (primitive: PrimitiveEntity) => void
+}
+
+function GeometryEditor({
+  primitive,
+  unit,
+  onReplace,
+}: GeometryEditorProps) {
+  const replaceGeometry = (geometry: PrimitiveGeometry) => {
+    onReplace({ ...primitive, geometry })
+  }
+  const lengthField = (
+    key: string,
+    label: string,
+    meters: number,
+    onChange: (value: number) => void,
+  ) => (
+    <LengthInput
+      key={key}
+      id={`${primitive.id}-${key}`}
+      label={label}
+      meters={meters}
+      unit={unit}
+      minMeters={0.01}
+      onChange={onChange}
+    />
+  )
+
+  switch (primitive.geometry.kind) {
+    case 'box': {
+      const geometry = primitive.geometry
+      return <>
+        {lengthField('width', 'Width', geometry.widthMeters, (value) =>
+          replaceGeometry({ ...geometry, widthMeters: value }))}
+        {lengthField('height', 'Height', geometry.heightMeters, (value) =>
+          replaceGeometry({ ...geometry, heightMeters: value }))}
+        {lengthField('depth', 'Depth', geometry.depthMeters, (value) =>
+          replaceGeometry({ ...geometry, depthMeters: value }))}
+      </>
+    }
+
+    case 'cylinder': {
+      const geometry = primitive.geometry
+      return <>
+        {lengthField('radius', 'Radius', geometry.radiusMeters, (value) =>
+          replaceGeometry({ ...geometry, radiusMeters: value }))}
+        {lengthField('height', 'Height', geometry.heightMeters, (value) =>
+          replaceGeometry({ ...geometry, heightMeters: value }))}
+      </>
+    }
+
+    case 'wall': {
+      const geometry = primitive.geometry
+      return <>
+        <label className="field" htmlFor={`${primitive.id}-structure`}>
+          <span>Structure</span>
+          <select
+            id={`${primitive.id}-structure`}
+            value={geometry.structure}
+            onChange={(event) => replaceGeometry({
+              ...geometry,
+              structure: event.currentTarget.value as typeof geometry.structure,
+            })}
+          >
+            <option value="wall">Wall</option>
+            <option value="fence">Fence</option>
+          </select>
+        </label>
+        {lengthField('length', 'Length', geometry.lengthMeters, (value) =>
+          replaceGeometry({ ...geometry, lengthMeters: value }))}
+        {lengthField('height', 'Height', geometry.heightMeters, (value) =>
+          replaceGeometry({ ...geometry, heightMeters: value }))}
+        {lengthField('thickness', 'Thickness', geometry.thicknessMeters, (value) =>
+          replaceGeometry({ ...geometry, thicknessMeters: value }))}
+      </>
+    }
+
+    case 'polygonExtrusion': {
+      const geometry = primitive.geometry
+      return <>
+        {lengthField('height', 'Height', geometry.heightMeters, (value) =>
+          replaceGeometry({ ...geometry, heightMeters: value }))}
+        <p className="field-note">
+          {geometry.footprint.length}-vertex local footprint
+        </p>
+      </>
+    }
+
+    case 'canopy': {
+      const geometry = primitive.geometry
+      return <>
+        {lengthField('east-radius', 'East radius', geometry.eastRadiusMeters, (value) =>
+          replaceGeometry({ ...geometry, eastRadiusMeters: value }))}
+        {lengthField('vertical-radius', 'Vertical radius', geometry.verticalRadiusMeters, (value) =>
+          replaceGeometry({ ...geometry, verticalRadiusMeters: value }))}
+        {lengthField('north-radius', 'North radius', geometry.northRadiusMeters, (value) =>
+          replaceGeometry({ ...geometry, northRadiusMeters: value }))}
+      </>
+    }
+  }
+}
+
 interface ObjectEditorProps {
   readonly primitives: readonly PrimitiveEntity[]
   readonly unit: DisplayUnit
   readonly canUndo: boolean
   readonly canRedo: boolean
-  readonly onAddBox: () => void
+  readonly onAddPrimitive: (kind: PrimitiveCreationKind) => void
   readonly onReplace: (primitive: PrimitiveEntity) => void
   readonly onRemove: (entityId: string) => void
   readonly onUndo: () => void
   readonly onRedo: () => void
 }
 
+const creationOptions: readonly {
+  kind: PrimitiveCreationKind
+  label: string
+}[] = [
+  { kind: 'box', label: 'Box' },
+  { kind: 'cylinder', label: 'Cylinder' },
+  { kind: 'wall', label: 'Wall' },
+  { kind: 'fence', label: 'Fence' },
+  { kind: 'polygonExtrusion', label: 'Extrusion' },
+  { kind: 'canopy', label: 'Canopy' },
+]
+
 export function ObjectEditor({
   primitives,
   unit,
   canUndo,
   canRedo,
-  onAddBox,
+  onAddPrimitive,
   onReplace,
   onRemove,
   onUndo,
@@ -59,9 +181,19 @@ export function ObjectEditor({
     <aside className="object-panel" aria-label="Object editor">
       <div className="object-toolbar">
         <strong>Objects</strong>
-        <button type="button" onClick={onAddBox}>Add box</button>
         <button type="button" disabled={!canUndo} onClick={onUndo}>Undo</button>
         <button type="button" disabled={!canRedo} onClick={onRedo}>Redo</button>
+      </div>
+      <div className="object-create-toolbar" aria-label="Create primitive">
+        {creationOptions.map(({ kind, label }) => (
+          <button
+            key={kind}
+            type="button"
+            onClick={() => onAddPrimitive(kind)}
+          >
+            + {label}
+          </button>
+        ))}
       </div>
       <div className="object-list">
         {primitives.map((primitive) => {
@@ -129,28 +261,19 @@ export function ObjectEditor({
                 radians={primitive.transform.rotation.zRadians}
                 onChange={(value) => replaceRotation('zRadians', value)}
               />
-              {(['widthMeters', 'heightMeters', 'depthMeters'] as const).map(
-                (key) => (
-                  <LengthInput
-                    key={key}
-                    id={`${primitive.id}-${key}`}
-                    label={key.replace('Meters', '').replace(/^./, (value) => value.toUpperCase())}
-                    meters={primitive.geometry[key]}
-                    unit={unit}
-                    minMeters={0.01}
-                    onChange={(value) => onReplace({
-                      ...primitive,
-                      geometry: { ...primitive.geometry, [key]: value },
-                    })}
-                  />
-                ),
-              )}
+              <GeometryEditor
+                primitive={primitive}
+                unit={unit}
+                onReplace={onReplace}
+              />
               <button
                 type="button"
                 className="remove-spot-button"
                 onClick={() => onRemove(primitive.id)}
               >
-                Remove box
+                Remove {primitive.geometry.kind === 'polygonExtrusion'
+                  ? 'extrusion'
+                  : primitive.geometry.kind}
               </button>
             </details>
           )
