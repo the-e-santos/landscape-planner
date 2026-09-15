@@ -5,7 +5,7 @@ import {
   type TerrainEntity,
   type TerrainLinearConstraint,
   type TerrainLinearConstraintRole,
-  type TerrainMeasurementSourceKind,
+  type TerrainRetainingWall,
 } from '../domain/terrain'
 import type { TerrainValidationIssue } from '../domain/terrainValidation'
 import {
@@ -14,6 +14,7 @@ import {
   type DisplayUnit,
 } from '../domain/units'
 import { LengthInput } from './LengthInput'
+import { RetainingWallEditor } from './RetainingWallEditor'
 
 interface TerrainEditorProps {
   readonly terrain: TerrainEntity
@@ -25,18 +26,10 @@ interface TerrainEditorProps {
   readonly onAddConstraint: () => void
   readonly onReplaceConstraint: (constraint: TerrainLinearConstraint) => void
   readonly onRemoveConstraint: (constraintId: string) => void
+  readonly onAddRetainingWall: () => void
+  readonly onReplaceRetainingWall: (retainingWall: TerrainRetainingWall) => void
+  readonly onRemoveRetainingWall: (retainingWallId: string) => void
 }
-
-const SOURCE_OPTIONS: ReadonlyArray<{
-  value: TerrainMeasurementSourceKind
-  label: string
-}> = [
-  { value: 'survey', label: 'Survey' },
-  { value: 'lidar', label: 'LiDAR' },
-  { value: 'gis', label: 'GIS' },
-  { value: 'estimated', label: 'Estimated' },
-  { value: 'user', label: 'User entered' },
-]
 
 const ROLE_OPTIONS: ReadonlyArray<{
   value: TerrainLinearConstraintRole
@@ -57,6 +50,9 @@ export function TerrainEditor({
   onAddConstraint,
   onReplaceConstraint,
   onRemoveConstraint,
+  onAddRetainingWall,
+  onReplaceRetainingWall,
+  onRemoveRetainingWall,
 }: TerrainEditorProps) {
   const [isCollapsed, setIsCollapsed] = useState(false)
   const constraints = getTerrainLinearConstraints(terrain)
@@ -184,25 +180,6 @@ export function TerrainEditor({
               unit={unit}
               onChange={(meters) => updateSpot(spot, 'elevationMeters', meters)}
             />
-            <label className="field" htmlFor={`terrain-${spot.id}-source`}>
-              <span>Source</span>
-              <select
-                id={`terrain-${spot.id}-source`}
-                value={spot.source.kind}
-                onChange={(event) =>
-                  updateSpot(spot, 'source', {
-                    ...spot.source,
-                    kind: event.currentTarget.value as TerrainMeasurementSourceKind,
-                  })
-                }
-              >
-                {SOURCE_OPTIONS.map((option) => (
-                  <option key={option.value} value={option.value}>
-                    {option.label}
-                  </option>
-                ))}
-              </select>
-            </label>
             <LengthInput
               id={`terrain-${spot.id}-horizontal-uncertainty`}
               label="± horizontal"
@@ -311,26 +288,6 @@ export function TerrainEditor({
                     ))}
                   </select>
                 </label>
-                <label className="field" htmlFor={`terrain-${constraint.id}-source`}>
-                  <span>Source</span>
-                  <select
-                    id={`terrain-${constraint.id}-source`}
-                    value={constraint.source.kind}
-                    onChange={(event) =>
-                      updateConstraint(constraint, 'source', {
-                        ...constraint.source,
-                        kind: event.currentTarget.value as TerrainMeasurementSourceKind,
-                      })
-                    }
-                  >
-                    {SOURCE_OPTIONS.map((option) => (
-                      <option key={option.value} value={option.value}>
-                        {option.label}
-                      </option>
-                    ))}
-                  </select>
-                </label>
-
                 <div className="constraint-point-heading">
                   <span>Ordered points</span>
                   <button
@@ -426,6 +383,13 @@ export function TerrainEditor({
           </div>
         )}
       </section>
+      <RetainingWallEditor
+        terrain={terrain}
+        unit={unit}
+        onAdd={onAddRetainingWall}
+        onReplace={onReplaceRetainingWall}
+        onRemove={onRemoveRetainingWall}
+      />
       </div>
     </aside>
   )

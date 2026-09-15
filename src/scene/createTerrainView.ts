@@ -6,6 +6,7 @@ import {
   type TerrainLinearConstraintRole,
 } from '../domain/terrain'
 import { clipTerrainMeshToParcel } from '../domain/terrainClipping'
+import { deriveRetainingWallFaces } from '../domain/retainingWallMesh'
 import { deriveTerrainMesh } from '../domain/terrainMesh'
 
 export interface TerrainView {
@@ -108,6 +109,56 @@ export function createTerrainView(
     geometries.add(wireframeGeometry)
     materials.add(wireframeMaterial)
     object.add(wireframe)
+
+    const retainingWallResult = deriveRetainingWallFaces(nextEntity)
+    if (retainingWallResult.ok) {
+      retainingWallResult.faces.forEach((face) => {
+        const wallGeometry = new THREE.BufferGeometry()
+        wallGeometry.setAttribute(
+          'position',
+          new THREE.Float32BufferAttribute(
+            face.vertices.flatMap(
+              ({ eastMeters, elevationMeters, northMeters }) => [
+                eastMeters,
+                elevationMeters,
+                -northMeters,
+              ],
+            ),
+            3,
+          ),
+        )
+        wallGeometry.setIndex(face.triangles.flatMap((triangle) => [...triangle]))
+        wallGeometry.computeVertexNormals()
+        const wallMaterial = new THREE.MeshStandardMaterial({
+          color: 0x8d8174,
+          roughness: 0.95,
+          side: THREE.DoubleSide,
+        })
+        const wallMesh = new THREE.Mesh(wallGeometry, wallMaterial)
+        wallMesh.name = `terrain-retaining-wall:${face.retainingWallId}`
+        wallMesh.userData.retainingWallId = face.retainingWallId
+        wallMesh.renderOrder = 2
+        geometries.add(wallGeometry)
+        materials.add(wallMaterial)
+        object.add(wallMesh)
+
+        const wallEdgeGeometry = new THREE.WireframeGeometry(wallGeometry)
+        const wallEdgeMaterial = new THREE.LineBasicMaterial({
+          color: 0x463f38,
+          depthWrite: false,
+        })
+        const wallEdges = new THREE.LineSegments(
+          wallEdgeGeometry,
+          wallEdgeMaterial,
+        )
+        wallEdges.name = `terrain-retaining-wall-edges:${face.retainingWallId}`
+        wallEdges.userData.retainingWallId = face.retainingWallId
+        wallEdges.renderOrder = 3
+        geometries.add(wallEdgeGeometry)
+        materials.add(wallEdgeMaterial)
+        object.add(wallEdges)
+      })
+    }
 
     const spotsById = new Map(
       nextEntity.spotElevations.map((spot) => [spot.id, spot]),

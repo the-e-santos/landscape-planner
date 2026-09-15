@@ -1,5 +1,6 @@
 import {
   getTerrainLinearConstraints,
+  getTerrainRetainingWalls,
   type SpotElevation,
   type TerrainEntity,
 } from './terrain'
@@ -20,10 +21,21 @@ export interface TerrainValidationIssue {
     | 'missing-constraint-spot'
     | 'repeated-constraint-spot'
     | 'intersecting-constraints'
+    | 'empty-retaining-wall-id'
+    | 'duplicate-retaining-wall-id'
+    | 'insufficient-retaining-wall-points'
+    | 'mismatched-retaining-wall-profiles'
+    | 'invalid-retaining-wall-point'
+    | 'duplicate-retaining-wall-point-id'
+    | 'misaligned-retaining-wall-profiles'
+    | 'invalid-retaining-wall-height'
+    | 'invalid-retaining-wall-segment'
+    | 'invalid-retaining-wall-uncertainty'
   readonly severity: 'warning' | 'error'
   readonly message: string
   readonly spotElevationIds?: readonly string[]
   readonly constraintIds?: readonly string[]
+  readonly retainingWallIds?: readonly string[]
 }
 
 function positionKey(spot: SpotElevation): string {
@@ -323,6 +335,143 @@ export function validateTerrain(
         })
       }
     })
+  })
+
+  const retainingWallIds = new Set<string>()
+  getTerrainRetainingWalls(terrain).forEach((wall) => {
+    if (wall.id.trim().length === 0) {
+      issues.push({
+        code: 'empty-retaining-wall-id',
+        severity: 'error',
+        message: 'A retaining wall has an empty ID.',
+        retainingWallIds: [wall.id],
+      })
+    } else if (retainingWallIds.has(wall.id)) {
+      issues.push({
+        code: 'duplicate-retaining-wall-id',
+        severity: 'error',
+        message: `Retaining wall ID is duplicated: ${wall.id}`,
+        retainingWallIds: [wall.id],
+      })
+    }
+    retainingWallIds.add(wall.id)
+
+    if (
+      !Number.isFinite(wall.uncertainty.horizontalMeters) ||
+      !Number.isFinite(wall.uncertainty.verticalMeters) ||
+      wall.uncertainty.horizontalMeters < 0 ||
+      wall.uncertainty.verticalMeters < 0
+    ) {
+      issues.push({
+        code: 'invalid-retaining-wall-uncertainty',
+        severity: 'error',
+        message: `Retaining wall ${wall.id} must have finite, non-negative uncertainty.`,
+        retainingWallIds: [wall.id],
+      })
+    }
+
+    if (wall.upperProfile.length < 2 || wall.lowerProfile.length < 2) {
+      issues.push({
+        code: 'insufficient-retaining-wall-points',
+        severity: 'error',
+        message: `Retaining wall ${wall.id} needs at least two upper and lower profile points.`,
+        retainingWallIds: [wall.id],
+      })
+    }
+
+    if (wall.upperProfile.length !== wall.lowerProfile.length) {
+      issues.push({
+        code: 'mismatched-retaining-wall-profiles',
+        severity: 'error',
+        message: `Retaining wall ${wall.id} upper and lower profiles must have the same number of points.`,
+        retainingWallIds: [wall.id],
+      })
+    }
+
+    const pointIds = new Set<string>()
+    const profilePoints = [...wall.upperProfile, ...wall.lowerProfile]
+    const hasInvalidPoint = profilePoints.some((point) => {
+      const invalid =
+        point.id.trim().length === 0 ||
+        !Number.isFinite(point.eastMeters) ||
+        !Number.isFinite(point.northMeters) ||
+        !Number.isFinite(point.elevationMeters)
+      return invalid
+    })
+    if (hasInvalidPoint) {
+      issues.push({
+        code: 'invalid-retaining-wall-point',
+        severity: 'error',
+        message: `Retaining wall ${wall.id} profile points need non-empty IDs and finite coordinates.`,
+        retainingWallIds: [wall.id],
+      })
+    }
+
+    const hasDuplicatePointId = profilePoints.some((point) => {
+      if (pointIds.has(point.id)) {
+        return true
+      }
+      pointIds.add(point.id)
+      return false
+    })
+    if (hasDuplicatePointId) {
+      issues.push({
+        code: 'duplicate-retaining-wall-point-id',
+        severity: 'error',
+        message: `Retaining wall ${wall.id} profile point IDs must be unique.`,
+        retainingWallIds: [wall.id],
+      })
+    }
+
+    if (wall.upperProfile.length === wall.lowerProfile.length) {
+      const profilesAreMisaligned = wall.upperProfile.some((upper, index) => {
+        const lower = wall.lowerProfile[index]
+        return (
+          upper.eastMeters !== lower.eastMeters ||
+          upper.northMeters !== lower.northMeters
+        )
+      })
+      if (profilesAreMisaligned) {
+        issues.push({
+          code: 'misaligned-retaining-wall-profiles',
+          severity: 'error',
+          message: `Retaining wall ${wall.id} corresponding upper and lower points must share plan coordinates.`,
+          retainingWallIds: [wall.id],
+        })
+      }
+
+      const hasInvalidHeight = wall.upperProfile.some(
+        (upper, index) =>
+          Number.isFinite(upper.elevationMeters) &&
+          Number.isFinite(wall.lowerProfile[index].elevationMeters) &&
+          upper.elevationMeters <= wall.lowerProfile[index].elevationMeters,
+      )
+      if (hasInvalidHeight) {
+        issues.push({
+          code: 'invalid-retaining-wall-height',
+          severity: 'error',
+          message: `Retaining wall ${wall.id} upper elevations must be above corresponding lower elevations.`,
+          retainingWallIds: [wall.id],
+        })
+      }
+
+      const hasZeroLengthSegment = wall.upperProfile.some((upper, index) => {
+        const next = wall.upperProfile[index + 1]
+        return (
+          next !== undefined &&
+          upper.eastMeters === next.eastMeters &&
+          upper.northMeters === next.northMeters
+        )
+      })
+      if (hasZeroLengthSegment) {
+        issues.push({
+          code: 'invalid-retaining-wall-segment',
+          severity: 'error',
+          message: `Retaining wall ${wall.id} cannot repeat consecutive plan positions.`,
+          retainingWallIds: [wall.id],
+        })
+      }
+    }
   })
 
   return issues

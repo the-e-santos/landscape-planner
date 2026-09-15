@@ -164,7 +164,8 @@
 }
 
 .terrain-spot-card,
-.terrain-constraint-card {
+.terrain-constraint-card,
+.terrain-retaining-wall-card {
   padding: 10px 12px;
   border: 1px solid #d9dfd8;
   border-radius: 9px;
@@ -172,7 +173,8 @@
 }
 
 .terrain-spot-card summary,
-.terrain-constraint-card summary {
+.terrain-constraint-card summary,
+.terrain-retaining-wall-card summary {
   display: flex;
   align-items: center;
   gap: 12px;
@@ -182,23 +184,27 @@
 }
 
 .terrain-spot-card summary::before,
-.terrain-constraint-card summary::before {
+.terrain-constraint-card summary::before,
+.terrain-retaining-wall-card summary::before {
   content: '▸';
   color: #637568;
 }
 
 .terrain-spot-card[open] summary::before,
-.terrain-constraint-card[open] summary::before {
+.terrain-constraint-card[open] summary::before,
+.terrain-retaining-wall-card[open] summary::before {
   content: '▾';
 }
 
 .terrain-spot-card summary span:first-of-type,
-.terrain-constraint-card summary span:nth-of-type(2) {
+.terrain-constraint-card summary span:nth-of-type(2),
+.terrain-retaining-wall-card summary span:first-of-type {
   flex: 1;
 }
 
 .terrain-spot-card code,
-.terrain-constraint-card code {
+.terrain-constraint-card code,
+.terrain-retaining-wall-card code {
   display: block;
   overflow: hidden;
   margin: 8px 0;
@@ -209,7 +215,8 @@
 }
 
 .terrain-spot-card .field,
-.terrain-constraint-card .field {
+.terrain-constraint-card .field,
+.terrain-retaining-wall-card .field {
   margin: 7px 0;
 }
 
@@ -217,6 +224,63 @@
   margin-top: 18px;
   padding-top: 16px;
   border-top: 1px solid #d9dfd8;
+}
+
+.terrain-retaining-wall-section {
+  margin-top: 18px;
+  padding-top: 16px;
+  border-top: 1px solid #d9dfd8;
+}
+
+.terrain-retaining-wall-section h2 {
+  margin: 0 0 3px;
+  font-size: 0.92rem;
+}
+
+.terrain-retaining-wall-list {
+  display: grid;
+  gap: 8px;
+  margin-top: 12px;
+}
+
+.terrain-retaining-wall-card summary span:last-child {
+  color: #69786e;
+  font-size: 0.68rem;
+  font-weight: 600;
+}
+
+.wall-station-heading,
+.wall-station-title {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+}
+
+.wall-station-heading {
+  margin-top: 12px;
+  font-size: 0.75rem;
+}
+
+.wall-station-list {
+  display: grid;
+  gap: 7px;
+  margin-top: 6px;
+}
+
+.wall-station-card {
+  padding: 8px 9px;
+  border: 1px solid #d9dfd8;
+  border-radius: 7px;
+  background: rgb(247 245 241 / 78%);
+}
+
+.wall-station-title {
+  margin-bottom: 3px;
+  font-size: 0.72rem;
+}
+
+.wall-station-card .field {
+  margin: 5px 0;
 }
 
 .terrain-constraint-section h2 {

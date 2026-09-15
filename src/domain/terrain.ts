@@ -36,6 +36,27 @@ export interface TerrainLinearConstraint {
   readonly source: TerrainMeasurementSource
 }
 
+export interface RetainingWallProfilePoint {
+  readonly id: string
+  readonly eastMeters: number
+  readonly northMeters: number
+  readonly elevationMeters: number
+}
+
+export type RetainingWallUpperSide = 'left' | 'right'
+
+export interface TerrainRetainingWall {
+  readonly id: string
+  readonly name: string
+  /** Corresponding upper/lower points share plan coordinates and ordering. */
+  readonly upperProfile: readonly RetainingWallProfilePoint[]
+  readonly lowerProfile: readonly RetainingWallProfilePoint[]
+  /** Side of the ordered profile carrying the upper adjoining terrain. */
+  readonly upperSide: RetainingWallUpperSide
+  readonly source: TerrainMeasurementSource
+  readonly uncertainty: TerrainPointUncertainty
+}
+
 export interface TerrainEntity {
   readonly id: string
   readonly kind: 'terrain'
@@ -44,6 +65,8 @@ export interface TerrainEntity {
   readonly spotElevations: readonly SpotElevation[]
   /** Missing on early schema-v1 files and treated as an empty collection. */
   readonly linearConstraints?: readonly TerrainLinearConstraint[]
+  /** Missing on early schema-v1 files and treated as an empty collection. */
+  readonly retainingWalls?: readonly TerrainRetainingWall[]
 }
 
 export const DEFAULT_TERRAIN_ID = 'terrain.main'
@@ -81,6 +104,7 @@ export function createFlatTerrainEntity({
     kind: 'terrain',
     name,
     linearConstraints: [],
+    retainingWalls: [],
     spotElevations: positions.map((position) => ({
       id: `${id}.spot.${position.suffix}`,
       eastMeters: position.eastMeters,
@@ -96,4 +120,10 @@ export function getTerrainLinearConstraints(
   terrain: TerrainEntity,
 ): readonly TerrainLinearConstraint[] {
   return terrain.linearConstraints ?? []
+}
+
+export function getTerrainRetainingWalls(
+  terrain: TerrainEntity,
+): readonly TerrainRetainingWall[] {
+  return terrain.retainingWalls ?? []
 }

@@ -2,9 +2,11 @@ import type { ParcelGeometry } from './parcel'
 import type { EntityId, LandscapeProject, ProjectEntity } from './project'
 import {
   getTerrainLinearConstraints,
+  getTerrainRetainingWalls,
   type SpotElevation,
   type TerrainEntity,
   type TerrainLinearConstraint,
+  type TerrainRetainingWall,
 } from './terrain'
 
 export type ProjectCommand =
@@ -47,6 +49,21 @@ export type ProjectCommand =
       readonly terrainEntityId: EntityId
       readonly constraintId: string
     }
+  | {
+      readonly type: 'terrain.retainingWall.add'
+      readonly terrainEntityId: EntityId
+      readonly retainingWall: TerrainRetainingWall
+    }
+  | {
+      readonly type: 'terrain.retainingWall.replace'
+      readonly terrainEntityId: EntityId
+      readonly retainingWall: TerrainRetainingWall
+    }
+  | {
+      readonly type: 'terrain.retainingWall.remove'
+      readonly terrainEntityId: EntityId
+      readonly retainingWallId: string
+    }
 
 function cloneSpotElevation(spot: SpotElevation): SpotElevation {
   return {
@@ -63,6 +80,18 @@ function cloneLinearConstraint(
     ...constraint,
     spotElevationIds: [...constraint.spotElevationIds],
     source: { ...constraint.source },
+  }
+}
+
+function cloneRetainingWall(
+  retainingWall: TerrainRetainingWall,
+): TerrainRetainingWall {
+  return {
+    ...retainingWall,
+    upperProfile: retainingWall.upperProfile.map((point) => ({ ...point })),
+    lowerProfile: retainingWall.lowerProfile.map((point) => ({ ...point })),
+    source: { ...retainingWall.source },
+    uncertainty: { ...retainingWall.uncertainty },
   }
 }
 
@@ -247,6 +276,63 @@ export function applyProjectCommand(
         }
 
         return { ...terrain, linearConstraints }
+      })
+
+    case 'terrain.retainingWall.add':
+      return updateTerrain(project, command.terrainEntityId, (terrain) => {
+        const retainingWalls = getTerrainRetainingWalls(terrain)
+        if (
+          retainingWalls.some(({ id }) => id === command.retainingWall.id)
+        ) {
+          throw new Error(
+            `Terrain retaining wall already exists: ${command.retainingWall.id}`,
+          )
+        }
+
+        return {
+          ...terrain,
+          retainingWalls: [
+            ...retainingWalls,
+            cloneRetainingWall(command.retainingWall),
+          ],
+        }
+      })
+
+    case 'terrain.retainingWall.replace':
+      return updateTerrain(project, command.terrainEntityId, (terrain) => {
+        let found = false
+        const retainingWalls = getTerrainRetainingWalls(terrain).map((wall) => {
+          if (wall.id !== command.retainingWall.id) {
+            return wall
+          }
+
+          found = true
+          return cloneRetainingWall(command.retainingWall)
+        })
+
+        if (!found) {
+          throw new Error(
+            `Terrain retaining wall not found: ${command.retainingWall.id}`,
+          )
+        }
+
+        return { ...terrain, retainingWalls }
+      })
+
+    case 'terrain.retainingWall.remove':
+      return updateTerrain(project, command.terrainEntityId, (terrain) => {
+        const currentWalls = getTerrainRetainingWalls(terrain)
+        const retainingWalls = currentWalls.filter(
+          ({ id }) => id !== command.retainingWallId,
+        )
+
+        if (retainingWalls.length === currentWalls.length) {
+          throw new Error(
+            `Terrain retaining wall not found: ${command.retainingWallId}`,
+          )
+        }
+
+        return { ...terrain, retainingWalls }
       })
   }
 }

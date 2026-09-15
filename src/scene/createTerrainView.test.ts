@@ -157,4 +157,46 @@ describe('terrain scene view', () => {
 
     view.dispose()
   })
+
+  it('renders explicit retaining-wall faces and edges', () => {
+    const baseTerrain = createFlatTerrainEntity({
+      eastWestMeters: 20,
+      northSouthMeters: 20,
+    })
+    const terrain = {
+      ...baseTerrain,
+      retainingWalls: [
+        {
+          id: 'wall.scene',
+          name: 'Scene wall',
+          upperProfile: [
+            { id: 'upper.1', eastMeters: -2, northMeters: 0, elevationMeters: 2 },
+            { id: 'upper.2', eastMeters: 2, northMeters: 0, elevationMeters: 2 },
+          ],
+          lowerProfile: [
+            { id: 'lower.1', eastMeters: -2, northMeters: 0, elevationMeters: 0 },
+            { id: 'lower.2', eastMeters: 2, northMeters: 0, elevationMeters: 0 },
+          ],
+          upperSide: 'left' as const,
+          source: { kind: 'user' as const },
+          uncertainty: { horizontalMeters: 0.1, verticalMeters: 0.05 },
+        },
+      ],
+    }
+    const view = createTerrainView(terrain)
+    const wall = view.object.getObjectByName('terrain-retaining-wall:wall.scene')
+    const edges = view.object.getObjectByName(
+      'terrain-retaining-wall-edges:wall.scene',
+    )
+
+    expect(wall).toBeInstanceOf(THREE.Mesh)
+    expect(edges).toBeInstanceOf(THREE.LineSegments)
+    if (wall instanceof THREE.Mesh) {
+      expect(wall.geometry.getAttribute('position').count).toBe(4)
+      expect(wall.geometry.index?.count).toBe(6)
+      expect(wall.userData.retainingWallId).toBe('wall.scene')
+    }
+
+    view.dispose()
+  })
 })

@@ -2,6 +2,7 @@ import { describe, expect, it } from 'vitest'
 import {
   createFlatTerrainEntity,
   type TerrainLinearConstraint,
+  type TerrainRetainingWall,
   type SpotElevation,
   type TerrainEntity,
 } from './terrain'
@@ -26,6 +27,7 @@ function createSpot(
 function createTerrain(
   spotElevations: readonly SpotElevation[],
   linearConstraints: readonly TerrainLinearConstraint[] = [],
+  retainingWalls: readonly TerrainRetainingWall[] = [],
 ): TerrainEntity {
   return {
     id: 'terrain.fixture',
@@ -33,6 +35,7 @@ function createTerrain(
     name: 'Fixture',
     spotElevations,
     linearConstraints,
+    retainingWalls,
   }
 }
 
@@ -191,6 +194,62 @@ describe('terrain domain', () => {
         code: 'intersecting-constraints',
         constraintIds: ['constraint.first', 'constraint.second'],
       }),
+    ])
+  })
+
+  it('accepts corresponding upper and lower retaining-wall profiles', () => {
+    const spots = [
+      createSpot('spot.a', -2, -2),
+      createSpot('spot.b', 2, -2),
+      createSpot('spot.c', 0, 2),
+    ]
+    const wall: TerrainRetainingWall = {
+      id: 'wall.test',
+      name: 'Test wall',
+      upperProfile: [
+        { id: 'wall.upper.1', eastMeters: -1, northMeters: 0, elevationMeters: 2 },
+        { id: 'wall.upper.2', eastMeters: 1, northMeters: 0, elevationMeters: 2 },
+      ],
+      lowerProfile: [
+        { id: 'wall.lower.1', eastMeters: -1, northMeters: 0, elevationMeters: 0 },
+        { id: 'wall.lower.2', eastMeters: 1, northMeters: 0, elevationMeters: 0 },
+      ],
+      upperSide: 'left',
+      source: { kind: 'survey' },
+      uncertainty: { horizontalMeters: 0.01, verticalMeters: 0.005 },
+    }
+
+    expect(validateTerrain(createTerrain(spots, [], [wall]))).toEqual([])
+  })
+
+  it('rejects misaligned or inverted retaining-wall profiles', () => {
+    const spots = [
+      createSpot('spot.a', -2, -2),
+      createSpot('spot.b', 2, -2),
+      createSpot('spot.c', 0, 2),
+    ]
+    const wall: TerrainRetainingWall = {
+      id: 'wall.invalid',
+      name: 'Invalid wall',
+      upperProfile: [
+        { id: 'wall.upper.1', eastMeters: -1, northMeters: 0, elevationMeters: 0 },
+        { id: 'wall.upper.2', eastMeters: 1, northMeters: 0, elevationMeters: 1 },
+      ],
+      lowerProfile: [
+        { id: 'wall.lower.1', eastMeters: -1, northMeters: 0, elevationMeters: 1 },
+        { id: 'wall.lower.2', eastMeters: 1, northMeters: 1, elevationMeters: 0 },
+      ],
+      upperSide: 'right',
+      source: { kind: 'user' },
+      uncertainty: { horizontalMeters: 0.1, verticalMeters: 0.05 },
+    }
+    const issueCodes = validateTerrain(createTerrain(spots, [], [wall])).map(
+      ({ code }) => code,
+    )
+
+    expect(issueCodes).toEqual([
+      'misaligned-retaining-wall-profiles',
+      'invalid-retaining-wall-height',
     ])
   })
 })

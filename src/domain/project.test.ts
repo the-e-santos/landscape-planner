@@ -16,6 +16,7 @@ import {
   DEFAULT_TERRAIN_ID,
   type SpotElevation,
   type TerrainLinearConstraint,
+  type TerrainRetainingWall,
 } from './terrain'
 
 describe('project model', () => {
@@ -38,7 +39,7 @@ describe('project model', () => {
     ).spotElevations
       .slice(0, 3)
       .map(({ id }) => id)
-    const project = applyProjectCommand(projectWithParcelUpdate, {
+    const projectWithConstraint = applyProjectCommand(projectWithParcelUpdate, {
       type: 'terrain.linearConstraint.add',
       terrainEntityId: DEFAULT_TERRAIN_ID,
       constraint: {
@@ -47,6 +48,25 @@ describe('project model', () => {
         role: 'gradeBreak',
         spotElevationIds: constraintSpotIds,
         source: { kind: 'survey', note: 'Serialization fixture' },
+      },
+    })
+    const project = applyProjectCommand(projectWithConstraint, {
+      type: 'terrain.retainingWall.add',
+      terrainEntityId: DEFAULT_TERRAIN_ID,
+      retainingWall: {
+        id: 'terrain.main.wall.round-trip',
+        name: 'Measured retaining wall',
+        upperProfile: [
+          { id: 'upper.1', eastMeters: -2, northMeters: 1, elevationMeters: 2 },
+          { id: 'upper.2', eastMeters: 2, northMeters: 1, elevationMeters: 2.2 },
+        ],
+        lowerProfile: [
+          { id: 'lower.1', eastMeters: -2, northMeters: 1, elevationMeters: 0.5 },
+          { id: 'lower.2', eastMeters: 2, northMeters: 1, elevationMeters: 0.6 },
+        ],
+        upperSide: 'left',
+        source: { kind: 'survey', note: 'Serialization fixture' },
+        uncertainty: { horizontalMeters: 0.02, verticalMeters: 0.01 },
       },
     })
 
@@ -162,6 +182,50 @@ describe('project model', () => {
     expect(
       getTerrainEntity(withoutConstraint, DEFAULT_TERRAIN_ID).linearConstraints,
     ).toEqual([])
+  })
+
+  it('adds, replaces, and removes a retaining wall by stable ID', () => {
+    const original = createDefaultProject()
+    const retainingWall: TerrainRetainingWall = {
+      id: 'terrain.main.wall.test',
+      name: 'Test wall',
+      upperProfile: [
+        { id: 'upper.1', eastMeters: -1, northMeters: 0, elevationMeters: 1 },
+        { id: 'upper.2', eastMeters: 1, northMeters: 0, elevationMeters: 1 },
+      ],
+      lowerProfile: [
+        { id: 'lower.1', eastMeters: -1, northMeters: 0, elevationMeters: 0 },
+        { id: 'lower.2', eastMeters: 1, northMeters: 0, elevationMeters: 0 },
+      ],
+      upperSide: 'right',
+      source: { kind: 'user' },
+      uncertainty: { horizontalMeters: 0.1, verticalMeters: 0.05 },
+    }
+    const withWall = applyProjectCommand(original, {
+      type: 'terrain.retainingWall.add',
+      terrainEntityId: DEFAULT_TERRAIN_ID,
+      retainingWall,
+    })
+    const replacement = { ...retainingWall, name: 'Revised wall' }
+    const withReplacement = applyProjectCommand(withWall, {
+      type: 'terrain.retainingWall.replace',
+      terrainEntityId: DEFAULT_TERRAIN_ID,
+      retainingWall: replacement,
+    })
+    const withoutWall = applyProjectCommand(withReplacement, {
+      type: 'terrain.retainingWall.remove',
+      terrainEntityId: DEFAULT_TERRAIN_ID,
+      retainingWallId: retainingWall.id,
+    })
+
+    expect(getTerrainEntity(original, DEFAULT_TERRAIN_ID).retainingWalls).toEqual([])
+    expect(getTerrainEntity(withWall, DEFAULT_TERRAIN_ID).retainingWalls).toContainEqual(
+      retainingWall,
+    )
+    expect(
+      getTerrainEntity(withReplacement, DEFAULT_TERRAIN_ID).retainingWalls,
+    ).toContainEqual(replacement)
+    expect(getTerrainEntity(withoutWall, DEFAULT_TERRAIN_ID).retainingWalls).toEqual([])
   })
 
   it('notifies subscribers after dispatching a command', () => {

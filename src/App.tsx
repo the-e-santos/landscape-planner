@@ -16,9 +16,11 @@ import { createProjectStore } from './domain/projectStore'
 import {
   DEFAULT_TERRAIN_ID,
   getTerrainLinearConstraints,
+  getTerrainRetainingWalls,
   type SpotElevation,
   type TerrainEntity,
   type TerrainLinearConstraint,
+  type TerrainRetainingWall,
 } from './domain/terrain'
 import { validateTerrain } from './domain/terrainValidation'
 import type { DisplayUnit } from './domain/units'
@@ -95,6 +97,53 @@ function createUserLinearConstraint(
     role: 'gradeBreak',
     spotElevationIds: terrain.spotElevations.slice(0, 2).map(({ id }) => id),
     source: { kind: 'user' },
+  }
+}
+
+function createUserRetainingWall(terrain: TerrainEntity): TerrainRetainingWall {
+  const walls = getTerrainRetainingWalls(terrain)
+  const usedIds = new Set(walls.map(({ id }) => id))
+  let sequence = 1
+  let id = `${terrain.id}.retaining-wall.user-${sequence}`
+  while (usedIds.has(id)) {
+    sequence += 1
+    id = `${terrain.id}.retaining-wall.user-${sequence}`
+  }
+
+  const eastValues = terrain.spotElevations.map(({ eastMeters }) => eastMeters)
+  const northValues = terrain.spotElevations.map(({ northMeters }) => northMeters)
+  const elevations = terrain.spotElevations.map(
+    ({ elevationMeters }) => elevationMeters,
+  )
+  const centerEast = (Math.min(...eastValues) + Math.max(...eastValues)) / 2
+  const centerNorth = (Math.min(...northValues) + Math.max(...northValues)) / 2
+  const halfLength = Math.max(
+    Math.min((Math.max(...eastValues) - Math.min(...eastValues)) / 6, 4),
+    1,
+  )
+  const averageElevation =
+    elevations.reduce((sum, elevation) => sum + elevation, 0) /
+    elevations.length
+  const stations = [centerEast - halfLength, centerEast + halfLength]
+
+  return {
+    id,
+    name: `Retaining wall ${walls.length + 1}`,
+    upperProfile: stations.map((eastMeters, index) => ({
+      id: `${id}.upper.${index + 1}`,
+      eastMeters,
+      northMeters: centerNorth,
+      elevationMeters: averageElevation + 0.6,
+    })),
+    lowerProfile: stations.map((eastMeters, index) => ({
+      id: `${id}.lower.${index + 1}`,
+      eastMeters,
+      northMeters: centerNorth,
+      elevationMeters: averageElevation - 0.4,
+    })),
+    upperSide: 'left',
+    source: { kind: 'user' },
+    uncertainty: { horizontalMeters: 0.1, verticalMeters: 0.05 },
   }
 }
 
@@ -245,6 +294,27 @@ function App() {
             type: 'terrain.linearConstraint.remove',
             terrainEntityId: terrain.id,
             constraintId,
+          })
+        }
+        onAddRetainingWall={() =>
+          projectStore.dispatch({
+            type: 'terrain.retainingWall.add',
+            terrainEntityId: terrain.id,
+            retainingWall: createUserRetainingWall(terrain),
+          })
+        }
+        onReplaceRetainingWall={(retainingWall) =>
+          projectStore.dispatch({
+            type: 'terrain.retainingWall.replace',
+            terrainEntityId: terrain.id,
+            retainingWall,
+          })
+        }
+        onRemoveRetainingWall={(retainingWallId) =>
+          projectStore.dispatch({
+            type: 'terrain.retainingWall.remove',
+            terrainEntityId: terrain.id,
+            retainingWallId,
           })
         }
       />
