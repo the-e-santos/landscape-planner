@@ -11,6 +11,7 @@ interface ProjectPersistenceProps {
   readonly onLoad: (file: File) => void
   readonly onRestore: () => void
   readonly onDismissRecovery: () => void
+  readonly onClose: () => void
 }
 
 function safeFileName(projectName: string): string {
@@ -38,6 +39,7 @@ export function ProjectPersistence({
   onLoad,
   onRestore,
   onDismissRecovery,
+  onClose,
 }: ProjectPersistenceProps) {
   const inputRef = useRef<HTMLInputElement>(null)
   const { panelRef, dragHandleProps } = useDraggablePanel<HTMLElement>()
@@ -59,7 +61,14 @@ export function ProjectPersistence({
         {...dragHandleProps}
       >
         <strong>Project files</strong>
-        <span aria-hidden="true">⠿</span>
+        <button
+          className="panel-close-button"
+          type="button"
+          aria-label="Close project files panel"
+          onClick={onClose}
+        >
+          Close
+        </button>
       </div>
       <div className="persistence-actions">
         <button type="button" onClick={() => downloadProject(project)}>Download JSON</button>

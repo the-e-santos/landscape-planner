@@ -24,6 +24,7 @@ interface SolarAnalysisPanelProps {
   readonly probedSurface: SurfacePoint | null
   readonly onProbeEnabledChange: (enabled: boolean) => void
   readonly progress: SolarCalculationProgress
+  readonly onClose: () => void
 }
 
 interface PointInputs {
@@ -63,6 +64,7 @@ export function SolarAnalysisPanel({
   probedSurface,
   onProbeEnabledChange,
   progress,
+  onClose,
 }: SolarAnalysisPanelProps) {
   const [collapsed, setCollapsed] = useState(false)
   const { panelRef, dragHandleProps } = useDraggablePanel<HTMLElement>()
@@ -250,14 +252,19 @@ export function SolarAnalysisPanel({
               : 'Accumulated exposure'}
           </h1>
         </div>
-        <button
-          className="panel-collapse-button"
-          type="button"
-          aria-expanded={!collapsed}
-          onClick={() => setCollapsed((value) => !value)}
-        >
-          {collapsed ? 'Open' : 'Collapse'}
-        </button>
+        <div className="panel-header-actions">
+          <button
+            className="panel-collapse-button"
+            type="button"
+            aria-expanded={!collapsed}
+            onClick={() => setCollapsed((value) => !value)}
+          >
+            {collapsed ? 'Open' : 'Collapse'}
+          </button>
+          <button className="panel-close-button" type="button" onClick={onClose}>
+            Close
+          </button>
+        </div>
       </header>
       <div className="solar-panel-content">
         <p className="panel-intro">

@@ -8,6 +8,11 @@ import {
 import { TerrainEditor } from './components/TerrainEditor'
 import { SolarAnalysisPanel } from './components/SolarAnalysisPanel'
 import {
+  PanelPalette,
+  type WorkspacePanelId,
+  type WorkspacePanelVisibility,
+} from './components/PanelPalette'
+import {
   createRectangleVertices,
   insertParcelMidpoint,
   type ParcelPoint,
@@ -318,6 +323,14 @@ function App() {
   })
   const [snapOverrideActive, setSnapOverrideActive] = useState(false)
   const [resizeProportionsLocked, setResizeProportionsLocked] = useState(false)
+  const [panelVisibility, setPanelVisibility] =
+    useState<WorkspacePanelVisibility>({
+      project: false,
+      parcel: true,
+      terrain: false,
+      objects: false,
+      solar: false,
+    })
   const [solarHeatmapSettings, setSolarHeatmapSettings] =
     useState<SolarHeatmapSettings>({ enabled: false })
   const [solarProbeEnabled, setSolarProbeEnabled] = useState(false)
@@ -363,6 +376,18 @@ function App() {
     ? selectedEntityId
     : null
   const terrainIssues = validateTerrain(terrain)
+  const togglePanel = (panelId: WorkspacePanelId) => {
+    setPanelVisibility((visibility) => ({
+      ...visibility,
+      [panelId]: !visibility[panelId],
+    }))
+  }
+  const closePanel = (panelId: WorkspacePanelId) => {
+    setPanelVisibility((visibility) => ({
+      ...visibility,
+      [panelId]: false,
+    }))
+  }
 
   useEffect(() => {
     let active = true
@@ -374,6 +399,10 @@ function App() {
             project: deserializeProject(autosave.json),
             savedAt: autosave.savedAt,
           })
+          setPanelVisibility((visibility) => ({
+            ...visibility,
+            project: true,
+          }))
           setPersistenceStatus('Choose whether to restore the local recovery copy.')
         } else {
           setAutosaveEnabled(true)
@@ -550,7 +579,9 @@ function App() {
   return (
     <main className="app-shell">
       <div ref={viewportRef} className="viewport" />
-      <ProjectPersistence
+      <PanelPalette visibility={panelVisibility} onToggle={togglePanel} />
+      <div hidden={!panelVisibility.project}>
+        <ProjectPersistence
         project={project}
         recoverySavedAt={recoveryProject?.savedAt ?? null}
         status={persistenceStatus}
@@ -593,15 +624,21 @@ function App() {
               `Could not dismiss recovery: ${error instanceof Error ? error.message : 'unknown error'}`,
             ))
         }}
-      />
-      <SolarAnalysisPanel
+          onClose={() => closePanel('project')}
+        />
+      </div>
+      <div hidden={!panelVisibility.solar}>
+        <SolarAnalysisPanel
         project={project}
         onHeatmapChange={setSolarHeatmapSettings}
         probedSurface={solarProbeSurface}
         onProbeEnabledChange={setSolarProbeEnabled}
         progress={solarProgress}
-      />
-      <ParcelEditor
+          onClose={() => closePanel('solar')}
+        />
+      </div>
+      <div hidden={!panelVisibility.parcel}>
+        <ParcelEditor
         mode={mode}
         unit={unit}
         rectangle={rectangle}
@@ -641,8 +678,11 @@ function App() {
         onUncertaintyChange={(uncertaintyMeters) =>
           replaceParcelGeometry(parcel.vertices, uncertaintyMeters)
         }
-      />
-      <TerrainEditor
+          onClose={() => closePanel('parcel')}
+        />
+      </div>
+      <div hidden={!panelVisibility.terrain}>
+        <TerrainEditor
         terrain={terrain}
         unit={unit}
         issues={terrainIssues}
@@ -709,8 +749,11 @@ function App() {
             retainingWallId,
           })
         }
-      />
-      <ObjectEditor
+          onClose={() => closePanel('terrain')}
+        />
+      </div>
+      <div hidden={!panelVisibility.objects}>
+        <ObjectEditor
         primitives={primitives}
         selectedEntityId={activeSelectedEntityId}
         unit={unit}
@@ -744,7 +787,9 @@ function App() {
         }}
         onUndo={projectStore.undo}
         onRedo={projectStore.redo}
-      />
+          onClose={() => closePanel('objects')}
+        />
+      </div>
     </main>
   )
 }

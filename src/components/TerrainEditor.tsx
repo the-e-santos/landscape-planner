@@ -30,6 +30,7 @@ interface TerrainEditorProps {
   readonly onAddRetainingWall: () => void
   readonly onReplaceRetainingWall: (retainingWall: TerrainRetainingWall) => void
   readonly onRemoveRetainingWall: (retainingWallId: string) => void
+  readonly onClose: () => void
 }
 
 const ROLE_OPTIONS: ReadonlyArray<{
@@ -54,6 +55,7 @@ export function TerrainEditor({
   onAddRetainingWall,
   onReplaceRetainingWall,
   onRemoveRetainingWall,
+  onClose,
 }: TerrainEditorProps) {
   const [isCollapsed, setIsCollapsed] = useState(false)
   const { panelRef, dragHandleProps } = useDraggablePanel<HTMLElement>()
@@ -131,6 +133,9 @@ export function TerrainEditor({
               onClick={() => setIsCollapsed((collapsed) => !collapsed)}
             >
               {isCollapsed ? 'Expand' : 'Collapse'}
+            </button>
+            <button className="panel-close-button" type="button" onClick={onClose}>
+              Close
             </button>
           </div>
         </div>

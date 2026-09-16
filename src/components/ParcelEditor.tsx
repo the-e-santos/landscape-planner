@@ -25,6 +25,7 @@ interface ParcelEditorProps {
   onRemoveVertex: (index: number) => void
   onResetPolygon: () => void
   onUncertaintyChange: (meters: number) => void
+  onClose: () => void
 }
 
 export function ParcelEditor({
@@ -41,6 +42,7 @@ export function ParcelEditor({
   onRemoveVertex,
   onResetPolygon,
   onUncertaintyChange,
+  onClose,
 }: ParcelEditorProps) {
   const [isCollapsed, setIsCollapsed] = useState(false)
   const { panelRef, dragHandleProps } = useDraggablePanel<HTMLElement>()
@@ -76,15 +78,20 @@ export function ParcelEditor({
             </p>
           )}
         </div>
-        <button
-          className="panel-collapse-button"
-          type="button"
-          aria-expanded={!isCollapsed}
-          aria-controls="parcel-editor-content"
-          onClick={() => setIsCollapsed((collapsed) => !collapsed)}
-        >
-          {isCollapsed ? 'Expand' : 'Collapse'}
-        </button>
+        <div className="panel-header-actions">
+          <button
+            className="panel-collapse-button"
+            type="button"
+            aria-expanded={!isCollapsed}
+            aria-controls="parcel-editor-content"
+            onClick={() => setIsCollapsed((collapsed) => !collapsed)}
+          >
+            {isCollapsed ? 'Expand' : 'Collapse'}
+          </button>
+          <button className="panel-close-button" type="button" onClick={onClose}>
+            Close
+          </button>
+        </div>
       </header>
 
       <div id="parcel-editor-content" hidden={isCollapsed}>

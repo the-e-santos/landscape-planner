@@ -425,6 +425,7 @@ interface ObjectEditorProps {
   readonly onRemove: (entityId: string) => void
   readonly onUndo: () => void
   readonly onRedo: () => void
+  readonly onClose: () => void
 }
 
 const creationOptions: readonly {
@@ -459,6 +460,7 @@ export function ObjectEditor({
   onRemove,
   onUndo,
   onRedo,
+  onClose,
 }: ObjectEditorProps) {
   const [isCollapsed, setIsCollapsed] = useState(false)
   const { panelRef, dragHandleProps } = useDraggablePanel<HTMLElement>()
@@ -513,6 +515,9 @@ export function ObjectEditor({
             onClick={() => setIsCollapsed((collapsed) => !collapsed)}
           >
             {isCollapsed ? 'Expand' : 'Collapse'}
+          </button>
+          <button className="panel-close-button" type="button" onClick={onClose}>
+            Close
           </button>
         </div>
       </header>

@@ -596,19 +596,34 @@ Deliver:
 
 This milestone proves the central performance architecture.
 
-### Milestone 10 — Anisotropic diffuse sky
+### Milestone 10 — Anisotropic diffuse sky and final irradiance
 
 Deliver:
 
 - Tregenza patch generation and solid-angle data
 - climate-model interface
-- initial synthetic climate model
+- initial synthetic climate model: clear/overcast selection for instantaneous
+  irradiance, plus a user-editable overcast-probability curve over apparent local
+  solar time for accumulated exposure; use the probability as a deterministic
+  expected-value weight between clear and overcast irradiance and sky states
 - anisotropic per-patch radiance
 - temporal patch integration
 - diffuse visibility and heatmap
 - DHI closure/normalization tests
+- Horticulturally useful terms and comparisons
 
-### Milestone 11 — WebGPU acceleration
+### Milestone 11 — Beds, irrigation, and plants
+
+Deliver:
+
+- bed geometry and soil metadata
+- irrigation zones/membership
+- plant entities and taxonomy identifiers
+- foliage-distance and shared-domain queries
+- evidence-aware interaction-rule format
+- explainable warnings and recommendations
+
+### Milestone 12 — WebGPU acceleration
 
 Deliver:
 
@@ -621,16 +636,6 @@ Deliver:
 GPU acceleration can be prototyped earlier if it de-risks the architecture, but it
 must not replace the reference solver before correctness is established.
 
-### Milestone 12 — Beds, irrigation, and plants
-
-Deliver:
-
-- bed geometry and soil metadata
-- irrigation zones/membership
-- plant entities and taxonomy identifiers
-- foliage-distance and shared-domain queries
-- evidence-aware interaction-rule format
-- explainable warnings and recommendations
 
 ## 10. Early validation fixtures
 
