@@ -4,11 +4,14 @@ import type {
   PrimitiveEntity,
   Rotation3,
 } from '../domain/primitive'
-import { createDirectPointSolarEvaluator } from './pointSolar'
 import type {
   ExposureDisplayChannel,
-  InstantSolarHeatmapSettings,
-} from './terrainExposure'
+  ExposureQuantity,
+  ExposureValues,
+  PreparedSurfaceExposure,
+  SolarHeatmapSettings,
+} from './exposureSettings'
+import { prepareSurfaceExposure } from './exposureSettings'
 
 export interface LocalSurfaceVertex {
   readonly position: Vector3
@@ -16,9 +19,7 @@ export interface LocalSurfaceVertex {
 }
 
 export interface PrimitiveExposureVertex extends LocalSurfaceVertex {
-  readonly directIrradianceWattsPerSquareMeter: number
-  readonly diffuseIrradianceWattsPerSquareMeter: number
-  readonly totalIrradianceWattsPerSquareMeter: number
+  readonly exposure: ExposureValues
 }
 
 export interface PrimitiveExposureLayer {
@@ -26,8 +27,22 @@ export interface PrimitiveExposureLayer {
   readonly vertices: readonly PrimitiveExposureVertex[]
   readonly triangles: readonly (readonly [number, number, number])[]
   readonly spacingMeters: number
-  readonly scaleMaximumIrradianceWattsPerSquareMeter: number
+  readonly scaleMaximum: number
   readonly displayChannel: ExposureDisplayChannel
+  readonly quantity: ExposureQuantity
+  readonly unit: 'W/m²' | 'kWh/m²'
+  readonly directionCount: number
+  readonly temporalSampleCount: number
+  readonly evaluatedSampleCount: number
+}
+
+export interface PrimitiveExposureReuse {
+  readonly previousLayer: PrimitiveExposureLayer
+  readonly shouldEvaluate: (worldPoint: {
+    readonly eastMeters: number
+    readonly elevationMeters: number
+    readonly northMeters: number
+  }) => boolean
 }
 
 interface Vector3 {
@@ -391,10 +406,27 @@ function rotate(vector: Vector3, rotation: Rotation3): Vector3 {
   }
 }
 
+export function primitiveLocalPositionToWorld(
+  entity: PrimitiveEntity,
+  position: Vector3,
+): { readonly eastMeters: number; readonly elevationMeters: number; readonly northMeters: number } {
+  const rotated = rotate(position, entity.transform.rotation)
+  return {
+    eastMeters: entity.transform.position.eastMeters + rotated.x,
+    elevationMeters: entity.transform.position.elevationMeters + rotated.y,
+    northMeters: entity.transform.position.northMeters - rotated.z,
+  }
+}
+
 export function generatePrimitiveExposureLayer(
   project: LandscapeProject,
   entity: PrimitiveEntity,
-  settings: Extract<InstantSolarHeatmapSettings, { readonly enabled: true }>,
+  settings: Extract<SolarHeatmapSettings, { readonly enabled: true }>,
+  preparedExposure: PreparedSurfaceExposure = prepareSurfaceExposure(
+    project,
+    settings,
+  ),
+  reuse?: PrimitiveExposureReuse,
 ): PrimitiveExposureLayer {
   const sampled = samplePrimitiveSurface(entity, settings.spacingMeters)
   const center = {
@@ -402,26 +434,36 @@ export function generatePrimitiveExposureLayer(
     y: entity.transform.position.elevationMeters,
     z: -entity.transform.position.northMeters,
   }
-  const evaluatePoint = createDirectPointSolarEvaluator(
-    project,
-    settings.solarPosition,
-    settings.directNormalIrradianceWattsPerSquareMeter,
-  )
-  const vertices = sampled.vertices.map((vertex): PrimitiveExposureVertex => {
+  let evaluatedSampleCount = 0
+  const vertices = sampled.vertices.map((vertex, index): PrimitiveExposureVertex => {
     const rotatedPosition = rotate(vertex.position, entity.transform.rotation)
     const worldNormal = rotate(vertex.normal, entity.transform.rotation)
-    const result = evaluatePoint({
+    const worldPoint = {
+      eastMeters: center.x + rotatedPosition.x,
+      elevationMeters: center.y + rotatedPosition.y,
+      northMeters: -(center.z + rotatedPosition.z),
+    }
+    const previous = reuse?.previousLayer.spacingMeters === settings.spacingMeters
+      ? reuse.previousLayer.vertices[index]
+      : undefined
+    const canReuse = previous !== undefined &&
+      previous.position.x === vertex.position.x &&
+      previous.position.y === vertex.position.y &&
+      previous.position.z === vertex.position.z &&
+      !reuse?.shouldEvaluate(worldPoint)
+    const exposure = canReuse
+      ? previous.exposure
+      : preparedExposure.evaluate({
         eastMeters: center.x + rotatedPosition.x + worldNormal.x * 1e-4,
         elevationMeters: center.y + rotatedPosition.y + worldNormal.y * 1e-4,
         northMeters: -(center.z + rotatedPosition.z + worldNormal.z * 1e-4),
         normal: { east: worldNormal.x, up: worldNormal.y, north: -worldNormal.z },
         owningEntityId: entity.id,
-    })
+      })
+    if (!canReuse) evaluatedSampleCount += 1
     return {
       ...vertex,
-      directIrradianceWattsPerSquareMeter: result.directIrradianceWattsPerSquareMeter,
-      diffuseIrradianceWattsPerSquareMeter: 0,
-      totalIrradianceWattsPerSquareMeter: result.directIrradianceWattsPerSquareMeter,
+      exposure,
     }
   })
   return {
@@ -429,8 +471,12 @@ export function generatePrimitiveExposureLayer(
     vertices,
     triangles: sampled.triangles,
     spacingMeters: settings.spacingMeters,
-    scaleMaximumIrradianceWattsPerSquareMeter:
-      settings.directNormalIrradianceWattsPerSquareMeter,
+    scaleMaximum: preparedExposure.scaleMaximum,
     displayChannel: settings.displayChannel,
+    quantity: preparedExposure.quantity,
+    unit: preparedExposure.unit,
+    directionCount: preparedExposure.directionCount,
+    temporalSampleCount: preparedExposure.temporalSampleCount,
+    evaluatedSampleCount,
   }
 }

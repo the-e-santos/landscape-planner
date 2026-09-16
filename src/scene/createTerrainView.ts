@@ -69,15 +69,11 @@ export function createTerrainView(
     const middle = new THREE.Color(0x2f8b83)
     const high = new THREE.Color(0xf1c75b)
     const scaleMaximum = Math.max(
-      layer.scaleMaximumIrradianceWattsPerSquareMeter,
+      layer.scaleMaximum,
       1,
     )
     const colors = layer.vertices.flatMap((vertex) => {
-      const irradiance = layer.displayChannel === 'direct'
-        ? vertex.directIrradianceWattsPerSquareMeter
-        : layer.displayChannel === 'diffuse'
-          ? vertex.diffuseIrradianceWattsPerSquareMeter
-          : vertex.totalIrradianceWattsPerSquareMeter
+      const irradiance = vertex.exposure[layer.displayChannel]
       const ratio = Math.max(
         0,
         Math.min(1, irradiance / scaleMaximum),

@@ -19,12 +19,22 @@ import {
   createPrimitiveView,
   type PrimitiveView,
 } from './createPrimitiveView'
-import {
-  generateTerrainExposureLayer,
-  type InstantSolarHeatmapSettings,
-} from '../solar/terrainExposure'
-import { generatePrimitiveExposureLayer } from '../solar/primitiveExposure'
+import type { TerrainExposureLayer } from '../solar/terrainExposure'
+import type { PrimitiveExposureLayer } from '../solar/primitiveExposure'
 import type { SurfacePoint } from '../solar/pointSolar'
+import {
+  type SolarCalculationProgress,
+  type SolarHeatmapSettings,
+} from '../solar/exposureSettings'
+import {
+  conservativePrimitiveBounds,
+  type Bounds3,
+  type ExposureTile,
+} from '../solar/tileInvalidation'
+import type {
+  ExposureWorkerRequest,
+  ExposureWorkerResponse,
+} from '../solar/exposureWorker'
 
 interface SceneEntity {
   readonly id: string
@@ -88,7 +98,7 @@ export interface YardScene {
   setManipulationMode(mode: PrimitiveManipulationMode): void
   setSnapSettings(settings: PrimitiveSnapSettings): void
   setResizeProportionsLocked(locked: boolean): void
-  setSolarHeatmap(settings: InstantSolarHeatmapSettings): void
+  setSolarHeatmap(settings: SolarHeatmapSettings): void
   setSolarProbeEnabled(enabled: boolean): void
   dispose(): void
 }
@@ -109,6 +119,7 @@ export interface YardSceneOptions {
   readonly onManipulationEnd?: () => void
   readonly onManipulationCancel?: () => void
   readonly onSolarProbe?: (surface: SurfacePoint) => void
+  readonly onSolarProgress?: (progress: SolarCalculationProgress) => void
 }
 
 export function getPrimitiveEntityIdFromObject(
@@ -217,53 +228,167 @@ export function createYardScene(
     resizeMeters: 0.1,
   }
   let currentProject: LandscapeProject | undefined
-  let heatmapSettings: InstantSolarHeatmapSettings = { enabled: false }
+  let heatmapSettings: SolarHeatmapSettings = { enabled: false }
   let solarProbeEnabled = false
+  let heatmapRevision = 0
+  let exposureWorker: Worker | undefined
+  let cachedExposureTiles: ExposureTile[] = []
+  let pendingChangedBounds: Bounds3[] = []
+  let invalidateAllExposureTiles = true
+  const cachedTerrainExposure = new Map<string, TerrainExposureLayer>()
+  const cachedPrimitiveExposure = new Map<string, PrimitiveExposureLayer>()
 
   const updateSolarHeatmap = () => {
+    heatmapRevision += 1
+    const revision = heatmapRevision
+    exposureWorker?.terminate()
+    exposureWorker = undefined
     if (!currentProject || !heatmapSettings.enabled || manipulating) {
       terrainViews.forEach(({ view }) => view.setExposureLayer(null))
       primitiveViews.forEach(({ view }) => view.setExposureLayer(null))
+      options.onSolarProgress?.({
+        status: 'idle',
+        stage: 0,
+        stageCount: 0,
+        message: manipulating
+          ? 'Exposure paused during object manipulation.'
+          : 'Exposure layer is off.',
+      })
       return
     }
-    const parcel = currentProject.entities.find(
-      (entity): entity is ParcelEntity => entity.kind === 'parcel',
-    )?.geometry
-    terrainViews.forEach(({ terrain, view }) => {
-      try {
-        view.setExposureLayer(generateTerrainExposureLayer(
-          currentProject!,
-          terrain,
-          parcel,
-          heatmapSettings as Extract<
-            InstantSolarHeatmapSettings,
-            { readonly enabled: true }
-          >,
-        ))
-      } catch (error) {
-        view.setExposureLayer(null)
-        view.object.userData.exposureError = error instanceof Error
-          ? error.message
-          : 'Exposure calculation failed'
-      }
+    const enabledSettings = heatmapSettings as Extract<
+      SolarHeatmapSettings,
+      { readonly enabled: true }
+    >
+    const canIncrementallyUpdate =
+      !invalidateAllExposureTiles && cachedExposureTiles.length > 0
+    const stageCandidates = canIncrementallyUpdate
+      ? [enabledSettings]
+      : enabledSettings.analysisMode === 'accumulated'
+      ? [
+          {
+            ...enabledSettings,
+            spacingMeters: Math.max(enabledSettings.spacingMeters, 2),
+            maximumDirections: Math.min(enabledSettings.maximumDirections, 24),
+          },
+          {
+            ...enabledSettings,
+            spacingMeters: Math.max(enabledSettings.spacingMeters, 0.5),
+            maximumDirections: Math.min(enabledSettings.maximumDirections, 64),
+          },
+          enabledSettings,
+        ]
+      : [enabledSettings]
+    const stages = stageCandidates.filter((stage, index, candidates) => {
+      if (index === 0) return true
+      const previous = candidates[index - 1]
+      return stage.spacingMeters !== previous.spacingMeters || (
+        stage.analysisMode === 'accumulated' &&
+        previous.analysisMode === 'accumulated' &&
+        stage.maximumDirections !== previous.maximumDirections
+      )
     })
-    primitiveViews.forEach(({ entity, view }) => {
-      try {
-        view.setExposureLayer(generatePrimitiveExposureLayer(
-          currentProject!,
-          entity,
-          heatmapSettings as Extract<
-            InstantSolarHeatmapSettings,
-            { readonly enabled: true }
-          >,
-        ))
-      } catch (error) {
-        view.setExposureLayer(null)
-        view.object.userData.exposureError = error instanceof Error
-          ? error.message
-          : 'Exposure calculation failed'
+
+    const runStage = (stageIndex: number) => {
+      if (revision !== heatmapRevision || !currentProject) return
+      const stage = stages[stageIndex]
+      options.onSolarProgress?.({
+        status: 'calculating',
+        stage: stageIndex + 1,
+        stageCount: stages.length,
+        spacingMeters: stage.spacingMeters,
+        directionCount: stage.analysisMode === 'accumulated'
+          ? stage.maximumDirections
+          : 1,
+        message: stageIndex === 0
+          ? 'Calculating coarse exposure preview…'
+          : 'Refining exposure…',
+      })
+      exposureWorker?.terminate()
+      exposureWorker = new Worker(
+        new URL('../solar/exposureWorker.ts', import.meta.url),
+        { type: 'module' },
+      )
+      exposureWorker.onmessage = ({ data }: MessageEvent<ExposureWorkerResponse>) => {
+        if (revision !== heatmapRevision || data.revision !== revision) return
+        if (!data.ok) {
+          options.onSolarProgress?.({
+            status: 'error',
+            stage: stageIndex + 1,
+            stageCount: stages.length,
+            message: data.message,
+          })
+          return
+        }
+        data.terrainLayers.forEach(([entityId, layer]) =>
+          terrainViews.get(entityId)?.view.setExposureLayer(layer)
+        )
+        data.primitiveLayers.forEach(([entityId, layer]) =>
+          primitiveViews.get(entityId)?.view.setExposureLayer(layer)
+        )
+        const complete = stageIndex === stages.length - 1
+        options.onSolarProgress?.({
+          status: complete ? 'complete' : 'calculating',
+          stage: stageIndex + 1,
+          stageCount: stages.length,
+          spacingMeters: stage.spacingMeters,
+          directionCount: data.directionCount,
+          temporalSampleCount: data.temporalSampleCount,
+          surfaceSampleCount: data.surfaceSampleCount,
+          evaluatedSurfaceSampleCount: data.evaluatedSurfaceSampleCount,
+          unit: data.unit,
+          scaleMaximum: data.scaleMaximum,
+          dirtyTileCount: data.dirtyTileCount,
+          totalTileCount: data.exposureTiles.length,
+          message: complete
+            ? 'Exposure calculation complete.'
+            : 'Preview ready; scheduling finer result.',
+        })
+        if (!complete) {
+          runStage(stageIndex + 1)
+        } else {
+          cachedExposureTiles = [...data.exposureTiles]
+          cachedTerrainExposure.clear()
+          data.terrainLayers.forEach(([entityId, layer]) =>
+            cachedTerrainExposure.set(entityId, layer)
+          )
+          cachedPrimitiveExposure.clear()
+          data.primitiveLayers.forEach(([entityId, layer]) =>
+            cachedPrimitiveExposure.set(entityId, layer)
+          )
+          pendingChangedBounds = []
+          invalidateAllExposureTiles = false
+        }
       }
-    })
+      exposureWorker.onerror = () => {
+        if (revision !== heatmapRevision) return
+        options.onSolarProgress?.({
+          status: 'error',
+          stage: stageIndex + 1,
+          stageCount: stages.length,
+          message: 'Exposure worker failed.',
+        })
+      }
+      const parcel = currentProject.entities.find(
+        (entity): entity is ParcelEntity => entity.kind === 'parcel',
+      )?.geometry
+      const request: ExposureWorkerRequest = {
+        revision,
+        project: currentProject,
+        ...(parcel ? { parcel } : {}),
+        terrains: [...terrainViews.values()].map(({ terrain }) => terrain),
+        primitives: [...primitiveViews.values()].map(({ entity }) => entity),
+        settings: stage,
+        invalidateAll: invalidateAllExposureTiles,
+        changedBounds: pendingChangedBounds,
+        cachedTiles: cachedExposureTiles,
+        previousTerrainLayers: [...cachedTerrainExposure],
+        previousPrimitiveLayers: [...cachedPrimitiveExposure],
+      }
+      exposureWorker.postMessage(request)
+    }
+
+    runStage(0)
   }
 
   const synchronizeManipulator = () => {
@@ -287,6 +412,41 @@ export function createYardScene(
   }
 
   const updateProject = (project: LandscapeProject) => {
+    const previousProject = currentProject
+    if (previousProject) {
+      if (
+        previousProject.coordinates.northRotationRadians !==
+        project.coordinates.northRotationRadians
+      ) {
+        invalidateAllExposureTiles = true
+      }
+      const previousById = new Map(
+        previousProject.entities.map((entity) => [entity.id, entity] as const),
+      )
+      const nextById = new Map(
+        project.entities.map((entity) => [entity.id, entity] as const),
+      )
+      const entityIds = new Set([...previousById.keys(), ...nextById.keys()])
+      entityIds.forEach((entityId) => {
+        const previous = previousById.get(entityId)
+        const next = nextById.get(entityId)
+        if (previous === next) return
+        if (previous?.kind === 'primitive') {
+          pendingChangedBounds.push(conservativePrimitiveBounds(previous))
+        }
+        if (next?.kind === 'primitive') {
+          pendingChangedBounds.push(conservativePrimitiveBounds(next))
+        }
+        if (
+          (previous && previous.kind !== 'primitive') ||
+          (next && next.kind !== 'primitive')
+        ) {
+          invalidateAllExposureTiles = true
+        }
+      })
+    } else {
+      invalidateAllExposureTiles = true
+    }
     currentProject = project
     const parcelEntities = project.entities.filter(
       (entity): entity is ParcelEntity => entity.kind === 'parcel',
@@ -554,6 +714,9 @@ export function createYardScene(
     },
     setSolarHeatmap: (settings) => {
       heatmapSettings = settings
+      invalidateAllExposureTiles = true
+      cachedTerrainExposure.clear()
+      cachedPrimitiveExposure.clear()
       updateSolarHeatmap()
     },
     setSolarProbeEnabled: (enabled) => {
@@ -567,6 +730,8 @@ export function createYardScene(
       manipulating = false
       resizeObserver.disconnect()
       renderer.setAnimationLoop(null)
+      heatmapRevision += 1
+      exposureWorker?.terminate()
       controls.dispose()
       transformControls.removeEventListener(
         'mouseDown',

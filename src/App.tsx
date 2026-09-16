@@ -37,7 +37,10 @@ import {
 } from './domain/terrain'
 import { validateTerrain } from './domain/terrainValidation'
 import type { DisplayUnit } from './domain/units'
-import type { InstantSolarHeatmapSettings } from './solar/terrainExposure'
+import type {
+  SolarCalculationProgress,
+  SolarHeatmapSettings,
+} from './solar/exposureSettings'
 import type { SurfacePoint } from './solar/pointSolar'
 import {
   clearProjectAutosave,
@@ -316,10 +319,16 @@ function App() {
   const [snapOverrideActive, setSnapOverrideActive] = useState(false)
   const [resizeProportionsLocked, setResizeProportionsLocked] = useState(false)
   const [solarHeatmapSettings, setSolarHeatmapSettings] =
-    useState<InstantSolarHeatmapSettings>({ enabled: false })
+    useState<SolarHeatmapSettings>({ enabled: false })
   const [solarProbeEnabled, setSolarProbeEnabled] = useState(false)
   const [solarProbeSurface, setSolarProbeSurface] =
     useState<SurfacePoint | null>(null)
+  const [solarProgress, setSolarProgress] = useState<SolarCalculationProgress>({
+    status: 'idle',
+    stage: 0,
+    stageCount: 0,
+    message: 'Exposure layer is off.',
+  })
   const [recoveryProject, setRecoveryProject] = useState<{
     project: LandscapeProject
     savedAt: string
@@ -434,6 +443,7 @@ function App() {
       onManipulationEnd: projectStore.commitTransaction,
       onManipulationCancel: projectStore.cancelTransaction,
       onSolarProbe: setSolarProbeSurface,
+      onSolarProgress: setSolarProgress,
     })
     yardSceneRef.current = yardScene
 
@@ -589,6 +599,7 @@ function App() {
         onHeatmapChange={setSolarHeatmapSettings}
         probedSurface={solarProbeSurface}
         onProbeEnabledChange={setSolarProbeEnabled}
+        progress={solarProgress}
       />
       <ParcelEditor
         mode={mode}

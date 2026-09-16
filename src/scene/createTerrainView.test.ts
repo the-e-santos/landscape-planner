@@ -212,16 +212,21 @@ describe('terrain scene view', () => {
     const view = createTerrainView(terrain)
     const layer: TerrainExposureLayer = {
       vertices: [
-        { eastMeters: -1, elevationMeters: 0, northMeters: -1, directIrradianceWattsPerSquareMeter: 0, diffuseIrradianceWattsPerSquareMeter: 0, totalIrradianceWattsPerSquareMeter: 0 },
-        { eastMeters: 1, elevationMeters: 0, northMeters: -1, directIrradianceWattsPerSquareMeter: 400, diffuseIrradianceWattsPerSquareMeter: 0, totalIrradianceWattsPerSquareMeter: 400 },
-        { eastMeters: 0, elevationMeters: 0, northMeters: 1, directIrradianceWattsPerSquareMeter: 800, diffuseIrradianceWattsPerSquareMeter: 0, totalIrradianceWattsPerSquareMeter: 800 },
+        { eastMeters: -1, elevationMeters: 0, northMeters: -1, exposure: { direct: 0, diffuse: 0, total: 0 } },
+        { eastMeters: 1, elevationMeters: 0, northMeters: -1, exposure: { direct: 400, diffuse: 0, total: 400 } },
+        { eastMeters: 0, elevationMeters: 0, northMeters: 1, exposure: { direct: 800, diffuse: 0, total: 800 } },
       ],
       triangles: [[0, 1, 2]],
       spacingMeters: 1,
-      minimumIrradianceWattsPerSquareMeter: 0,
-      maximumIrradianceWattsPerSquareMeter: 800,
-      scaleMaximumIrradianceWattsPerSquareMeter: 800,
+      minimumValue: 0,
+      maximumValue: 800,
+      scaleMaximum: 800,
       displayChannel: 'direct',
+      quantity: 'irradiance',
+      unit: 'W/m²',
+      directionCount: 1,
+      temporalSampleCount: 1,
+      evaluatedSampleCount: 3,
     }
 
     view.setExposureLayer(layer)

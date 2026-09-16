@@ -12,15 +12,18 @@ import {
 } from '../solar/solarPosition'
 import type {
   ExposureDisplayChannel,
-  InstantSolarHeatmapSettings,
-} from '../solar/terrainExposure'
+  SolarCalculationProgress,
+  SolarHeatmapSettings,
+} from '../solar/exposureSettings'
+import { prepareSurfaceExposure } from '../solar/exposureSettings'
 import { useDraggablePanel } from './useDraggablePanel'
 
 interface SolarAnalysisPanelProps {
   readonly project: LandscapeProject
-  readonly onHeatmapChange: (settings: InstantSolarHeatmapSettings) => void
+  readonly onHeatmapChange: (settings: SolarHeatmapSettings) => void
   readonly probedSurface: SurfacePoint | null
   readonly onProbeEnabledChange: (enabled: boolean) => void
+  readonly progress: SolarCalculationProgress
 }
 
 interface PointInputs {
@@ -59,6 +62,7 @@ export function SolarAnalysisPanel({
   onHeatmapChange,
   probedSurface,
   onProbeEnabledChange,
+  progress,
 }: SolarAnalysisPanelProps) {
   const [collapsed, setCollapsed] = useState(false)
   const { panelRef, dragHandleProps } = useDraggablePanel<HTMLElement>()
@@ -71,6 +75,12 @@ export function SolarAnalysisPanel({
   const [displayChannel, setDisplayChannel] =
     useState<ExposureDisplayChannel>('direct')
   const [probeEnabled, setProbeEnabled] = useState(false)
+  const [analysisMode, setAnalysisMode] =
+    useState<'instant' | 'accumulated'>('instant')
+  const [periodStartDate, setPeriodStartDate] = useState('2026-06-01')
+  const [periodEndDate, setPeriodEndDate] = useState('2026-06-30')
+  const [temporalStepMinutes, setTemporalStepMinutes] = useState(60)
+  const [maximumDirections, setMaximumDirections] = useState(64)
   const [pointEdit, setPointEdit] = useState<{
     readonly source: SurfacePoint | null
     readonly values: PointInputs
@@ -85,11 +95,14 @@ export function SolarAnalysisPanel({
       normalNorth: 0,
     },
   })
-  const point = pointEdit.source === probedSurface
-    ? pointEdit.values
-    : probedSurface
-      ? pointInputsFromSurface(probedSurface)
-      : pointEdit.values
+  const point = useMemo(
+    () => pointEdit.source === probedSurface
+      ? pointEdit.values
+      : probedSurface
+        ? pointInputsFromSurface(probedSurface)
+        : pointEdit.values,
+    [pointEdit, probedSurface],
+  )
   const calculation = useMemo(() => {
     try {
       return {
@@ -134,30 +147,82 @@ export function SolarAnalysisPanel({
     })
   }
   const result = calculation.result
-  const heatmapSettings = useMemo<InstantSolarHeatmapSettings>(() => {
-    if (!heatmapEnabled) return { enabled: false }
-    const solarPosition = {
-      date: parseDate(date),
-      latitudeRadians: degreesToRadians(latitudeDegrees),
-      localSolarTimeHours: solarTimeHours,
-    }
+  const analysisSettings = useMemo<SolarHeatmapSettings>(() => {
     try {
-      calculateSolarPosition(solarPosition)
       if (!Number.isFinite(dni) || dni < 0) throw new Error('Invalid DNI')
       if (!Number.isFinite(heatmapSpacingMeters) || heatmapSpacingMeters <= 0) {
         throw new Error('Invalid spacing')
       }
+      if (analysisMode === 'instant') {
+        const solarPosition = {
+          date: parseDate(date),
+          latitudeRadians: degreesToRadians(latitudeDegrees),
+          localSolarTimeHours: solarTimeHours,
+        }
+        calculateSolarPosition(solarPosition)
+        return {
+          enabled: true,
+          analysisMode,
+          solarPosition,
+          directNormalIrradianceWattsPerSquareMeter: dni,
+          spacingMeters: heatmapSpacingMeters,
+          displayChannel,
+        }
+      }
       return {
         enabled: true,
-        solarPosition,
-        directNormalIrradianceWattsPerSquareMeter: dni,
+        analysisMode,
+        period: {
+          startDate: parseDate(periodStartDate),
+          endDate: parseDate(periodEndDate),
+          latitudeRadians: degreesToRadians(latitudeDegrees),
+          directNormalIrradianceWattsPerSquareMeter: dni,
+          timeStepMinutes: temporalStepMinutes,
+        },
+        maximumDirections,
         spacingMeters: heatmapSpacingMeters,
         displayChannel,
       }
     } catch {
       return { enabled: false }
     }
-  }, [date, displayChannel, dni, heatmapEnabled, heatmapSpacingMeters, latitudeDegrees, solarTimeHours])
+  }, [analysisMode, date, displayChannel, dni, heatmapSpacingMeters, latitudeDegrees, maximumDirections, periodEndDate, periodStartDate, solarTimeHours, temporalStepMinutes])
+  const heatmapSettings = useMemo<SolarHeatmapSettings>(
+    () => heatmapEnabled ? analysisSettings : { enabled: false },
+    [analysisSettings, heatmapEnabled],
+  )
+  const accumulatedPointCalculation = useMemo(() => {
+    if (
+      !analysisSettings.enabled ||
+      analysisSettings.analysisMode !== 'accumulated'
+    ) return { exposure: null, error: null }
+    try {
+      const prepared = prepareSurfaceExposure(project, analysisSettings)
+      return {
+        exposure: prepared.evaluate({
+          eastMeters: point.eastMeters,
+          elevationMeters: point.elevationMeters,
+          northMeters: point.northMeters,
+          normal: {
+            east: point.normalEast,
+            up: point.normalUp,
+            north: point.normalNorth,
+          },
+          ...(point.owningEntityId
+            ? { owningEntityId: point.owningEntityId }
+            : {}),
+        }),
+        error: null,
+      }
+    } catch (error) {
+      return {
+        exposure: null,
+        error: error instanceof Error
+          ? error.message
+          : 'Accumulated point query failed',
+      }
+    }
+  }, [analysisSettings, point, project])
 
   useEffect(() => {
     onHeatmapChange(heatmapSettings)
@@ -178,8 +243,12 @@ export function SolarAnalysisPanel({
         {...dragHandleProps}
       >
         <div>
-          <p className="eyebrow">Milestone 8 analysis</p>
-          <h1>Instant exposure</h1>
+          <p className="eyebrow">Milestone 9 analysis</p>
+          <h1>
+            {analysisMode === 'instant'
+              ? 'Instant exposure'
+              : 'Accumulated exposure'}
+          </h1>
         </div>
         <button
           className="panel-collapse-button"
@@ -192,21 +261,92 @@ export function SolarAnalysisPanel({
       </header>
       <div className="solar-panel-content">
         <p className="panel-intro">
-          CPU-reference values and toggleable surface exposure at one solar instant.
+          {analysisMode === 'instant'
+            ? 'CPU-reference values and surface exposure at one solar instant.'
+            : 'Direct exposure accumulated across a selected calendar period.'}
         </p>
-        <section className="solar-inputs" aria-label="Solar instant">
-          <label className="field">
-            <span>Date</span>
-            <input type="date" value={date} onChange={(event) => setDate(event.target.value)} />
-          </label>
-          <label className="field">
-            <span>Solar time</span>
-            <input
-              type="number" min="0" max="24" step="0.25"
-              value={solarTimeHours}
-              onChange={(event) => setSolarTimeHours(event.target.valueAsNumber)}
-            />
-          </label>
+        <fieldset className="segmented-field solar-mode-field">
+          <legend>Exposure period</legend>
+          <div className="segmented-control">
+            <button
+              type="button"
+              aria-pressed={analysisMode === 'instant'}
+              onClick={() => setAnalysisMode('instant')}
+            >
+              Instant
+            </button>
+            <button
+              type="button"
+              aria-pressed={analysisMode === 'accumulated'}
+              onClick={() => setAnalysisMode('accumulated')}
+            >
+              Accumulated
+            </button>
+          </div>
+        </fieldset>
+        <section
+          className="solar-inputs"
+          aria-label={analysisMode === 'instant' ? 'Solar instant' : 'Exposure period'}
+        >
+          {analysisMode === 'instant' ? (
+            <>
+              <label className="field">
+                <span>Date</span>
+                <input type="date" value={date} onChange={(event) => setDate(event.target.value)} />
+              </label>
+              <label className="field">
+                <span>Solar time</span>
+                <input
+                  type="number" min="0" max="24" step="0.25"
+                  value={solarTimeHours}
+                  onChange={(event) => setSolarTimeHours(event.target.valueAsNumber)}
+                />
+              </label>
+            </>
+          ) : (
+            <div className="accumulation-settings">
+              <label className="field">
+                <span>Start date</span>
+                <input
+                  type="date"
+                  value={periodStartDate}
+                  onChange={(event) => setPeriodStartDate(event.target.value)}
+                />
+              </label>
+              <label className="field">
+                <span>End date</span>
+                <input
+                  type="date"
+                  value={periodEndDate}
+                  onChange={(event) => setPeriodEndDate(event.target.value)}
+                />
+              </label>
+              <label className="field">
+                <span>Time step</span>
+                <select
+                  value={temporalStepMinutes}
+                  onChange={(event) => setTemporalStepMinutes(Number(event.target.value))}
+                >
+                  <option value={120}>2 hours</option>
+                  <option value={60}>1 hour</option>
+                  <option value={30}>30 minutes</option>
+                  <option value={15}>15 minutes</option>
+                </select>
+              </label>
+              <label className="field">
+                <span>Final directions</span>
+                <select
+                  value={maximumDirections}
+                  onChange={(event) => setMaximumDirections(Number(event.target.value))}
+                >
+                  <option value={32}>32 · preview</option>
+                  <option value={64}>64 · interactive</option>
+                  <option value={128}>128 · refined</option>
+                  <option value={256}>256 · analysis</option>
+                </select>
+              </label>
+            </div>
+          )}
           <label className="field">
             <span>Latitude</span>
             <span className="solar-number-input">
@@ -266,16 +406,59 @@ export function SolarAnalysisPanel({
               <option value={0.1}>0.1 m · analysis</option>
             </select>
           </label>
-          <div className="heatmap-legend" aria-label={`Heatmap scale from zero to ${dni} watts per square meter`}>
+          <div className="heatmap-legend" aria-label="Heatmap quantitative scale">
             <span>0</span>
             <i />
-            <span>{formatNumber(dni, 0)} W/m²</span>
+            <span>
+              {formatNumber(
+                progress.scaleMaximum ?? dni,
+                analysisMode === 'instant' ? 0 : 1,
+              )} {progress.unit ?? (analysisMode === 'instant' ? 'W/m²' : 'kWh/m²')}
+            </span>
           </div>
           <p className="field-note">
             Instant irradiance on terrain and primitives. Diffuse is an explicit
             zero-valued placeholder; total currently equals direct. Detailed
             spacing can take noticeably longer on large parcels.
           </p>
+          {heatmapEnabled && (
+            <div className={`solar-progress ${progress.status}`} role="status">
+              <strong>{progress.message}</strong>
+              <span>
+                {progress.stageCount > 0
+                  ? `Stage ${progress.stage}/${progress.stageCount}`
+                  : 'Waiting'}
+                {progress.spacingMeters !== undefined
+                  ? ` · ${progress.spacingMeters} m`
+                  : ''}
+                {progress.directionCount !== undefined
+                  ? ` · ${progress.directionCount} directions`
+                  : ''}
+              </span>
+              {progress.surfaceSampleCount !== undefined && (
+                <span>
+                  {progress.surfaceSampleCount.toLocaleString()} surface samples
+                  {progress.temporalSampleCount !== undefined
+                    ? ` · ${progress.temporalSampleCount.toLocaleString()} time samples`
+                    : ''}
+                </span>
+              )}
+              {progress.evaluatedSurfaceSampleCount !== undefined &&
+                progress.surfaceSampleCount !== undefined && (
+                <span>
+                  {progress.evaluatedSurfaceSampleCount.toLocaleString()} of{' '}
+                  {progress.surfaceSampleCount.toLocaleString()} samples evaluated
+                  this pass
+                </span>
+              )}
+              {progress.totalTileCount !== undefined && (
+                <span>
+                  {progress.dirtyTileCount ?? progress.totalTileCount}/
+                  {progress.totalTileCount} conservative 8 m tiles dirty
+                </span>
+              )}
+            </div>
+          )}
         </section>
         <section className="solar-probe-controls" aria-label="Quantitative probe">
           <label className="snap-toggle">
@@ -326,9 +509,33 @@ export function SolarAnalysisPanel({
             ))}
           </div>
         </section>
-        {calculation.error ? (
+        {analysisMode === 'accumulated' && accumulatedPointCalculation.error ? (
+          <p className="solar-error" role="alert">
+            {accumulatedPointCalculation.error}
+          </p>
+        ) : analysisMode === 'accumulated' && accumulatedPointCalculation.exposure ? (
+          <section className="solar-results" aria-live="polite">
+            <div className="solar-primary-result">
+              <strong>{formatNumber(accumulatedPointCalculation.exposure.direct, 2)}</strong>
+              <span>kWh/m² accumulated direct</span>
+            </div>
+            <div className="solar-channel-results">
+              <span>
+                Direct {formatNumber(accumulatedPointCalculation.exposure.direct, 2)} kWh/m²
+              </span>
+              <span>Diffuse 0.00 kWh/m² <em>placeholder</em></span>
+              <span>
+                Total {formatNumber(accumulatedPointCalculation.exposure.total, 2)} kWh/m²
+              </span>
+            </div>
+            <p className="field-note">
+              Constant {formatNumber(dni, 0)} W/m² DNI model from{' '}
+              {periodStartDate} through {periodEndDate}.
+            </p>
+          </section>
+        ) : analysisMode === 'instant' && calculation.error ? (
           <p className="solar-error" role="alert">{calculation.error}</p>
-        ) : result ? (
+        ) : analysisMode === 'instant' && result ? (
           <section className="solar-results" aria-live="polite">
             <div className="solar-primary-result">
               <strong>{formatNumber(result.directIrradianceWattsPerSquareMeter)}</strong>

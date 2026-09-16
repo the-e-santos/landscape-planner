@@ -7,6 +7,7 @@ import { generateTerrainExposureLayer } from './terrainExposure'
 
 const settings = {
   enabled: true,
+  analysisMode: 'instant',
   solarPosition: {
     date: { year: 2024, month: 3, day: 20 },
     latitudeRadians: 0,
@@ -46,8 +47,8 @@ describe('terrain exposure sampling', () => {
     expect(first).toEqual(second)
     expect(first.triangles.length).toBeGreaterThan(2)
     expect(first.vertices.length).toBeGreaterThan(4)
-    expect(first.minimumIrradianceWattsPerSquareMeter).toBeCloseTo(800, 2)
-    expect(first.maximumIrradianceWattsPerSquareMeter).toBeCloseTo(800, 2)
+    expect(first.minimumValue).toBeCloseTo(800, 2)
+    expect(first.maximumValue).toBeCloseTo(800, 2)
   })
 
   it('captures an opaque primitive shadow without changing terrain state', () => {
@@ -76,8 +77,8 @@ describe('terrain exposure sampling', () => {
       settings,
     )
 
-    expect(layer.minimumIrradianceWattsPerSquareMeter).toBe(0)
-    expect(layer.maximumIrradianceWattsPerSquareMeter).toBeCloseTo(800, 2)
+    expect(layer.minimumValue).toBe(0)
+    expect(layer.maximumValue).toBeCloseTo(800, 2)
     expect(terrain).toEqual(createFlatTerrainEntity({
       eastWestMeters: 6,
       northSouthMeters: 6,
@@ -91,5 +92,28 @@ describe('terrain exposure sampling', () => {
       undefined,
       { ...settings, spacingMeters: 0 },
     )).toThrow('Heatmap spacing must be a positive finite number')
+  })
+
+  it('reuses samples outside the dirty tile set', () => {
+    const terrain = createFlatTerrainEntity({
+      eastWestMeters: 2,
+      northSouthMeters: 2,
+    })
+    const project = createDefaultProject()
+    const first = generateTerrainExposureLayer(project, terrain, undefined, settings)
+    const reused = generateTerrainExposureLayer(
+      project,
+      terrain,
+      undefined,
+      settings,
+      undefined,
+      { previousLayer: first, shouldEvaluate: () => false },
+    )
+
+    expect(first.evaluatedSampleCount).toBe(first.vertices.length)
+    expect(reused.evaluatedSampleCount).toBe(0)
+    expect(reused.vertices.map(({ exposure }) => exposure)).toEqual(
+      first.vertices.map(({ exposure }) => exposure),
+    )
   })
 })

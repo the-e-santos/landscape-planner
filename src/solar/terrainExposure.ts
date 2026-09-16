@@ -6,35 +6,37 @@ import {
   deriveTerrainMesh,
   type TerrainMeshVertex,
 } from '../domain/terrainMesh'
-import { createDirectPointSolarEvaluator } from './pointSolar'
-import type { SolarPositionInput } from './solarPosition'
-
-export type ExposureDisplayChannel = 'direct' | 'diffuse' | 'total'
-
-export type InstantSolarHeatmapSettings =
-  | { readonly enabled: false }
-  | {
-      readonly enabled: true
-      readonly solarPosition: SolarPositionInput
-      readonly directNormalIrradianceWattsPerSquareMeter: number
-      readonly spacingMeters: number
-      readonly displayChannel: ExposureDisplayChannel
-    }
+import {
+  prepareSurfaceExposure,
+  type ExposureDisplayChannel,
+  type ExposureQuantity,
+  type ExposureValues,
+  type PreparedSurfaceExposure,
+  type SolarHeatmapSettings,
+} from './exposureSettings'
 
 export interface TerrainExposureVertex extends TerrainMeshVertex {
-  readonly directIrradianceWattsPerSquareMeter: number
-  readonly diffuseIrradianceWattsPerSquareMeter: number
-  readonly totalIrradianceWattsPerSquareMeter: number
+  readonly exposure: ExposureValues
 }
 
 export interface TerrainExposureLayer {
   readonly vertices: readonly TerrainExposureVertex[]
   readonly triangles: readonly (readonly [number, number, number])[]
   readonly spacingMeters: number
-  readonly minimumIrradianceWattsPerSquareMeter: number
-  readonly maximumIrradianceWattsPerSquareMeter: number
-  readonly scaleMaximumIrradianceWattsPerSquareMeter: number
+  readonly minimumValue: number
+  readonly maximumValue: number
+  readonly scaleMaximum: number
   readonly displayChannel: ExposureDisplayChannel
+  readonly quantity: ExposureQuantity
+  readonly unit: 'W/m²' | 'kWh/m²'
+  readonly directionCount: number
+  readonly temporalSampleCount: number
+  readonly evaluatedSampleCount: number
+}
+
+export interface TerrainExposureReuse {
+  readonly previousLayer: TerrainExposureLayer
+  readonly shouldEvaluate: (point: TerrainMeshVertex) => boolean
 }
 
 interface Vector3 {
@@ -102,7 +104,12 @@ export function generateTerrainExposureLayer(
   project: LandscapeProject,
   terrain: TerrainEntity,
   parcel: ParcelGeometry | undefined,
-  settings: Extract<InstantSolarHeatmapSettings, { readonly enabled: true }>,
+  settings: Extract<SolarHeatmapSettings, { readonly enabled: true }>,
+  preparedExposure: PreparedSurfaceExposure = prepareSurfaceExposure(
+    project,
+    settings,
+  ),
+  reuse?: TerrainExposureReuse,
 ): TerrainExposureLayer {
   if (!Number.isFinite(settings.spacingMeters) || settings.spacingMeters <= 0) {
     throw new Error('Heatmap spacing must be a positive finite number')
@@ -120,11 +127,7 @@ export function generateTerrainExposureLayer(
 
   const vertices: TerrainExposureVertex[] = []
   const triangles: [number, number, number][] = []
-  const evaluatePoint = createDirectPointSolarEvaluator(
-    project,
-    settings.solarPosition,
-    settings.directNormalIrradianceWattsPerSquareMeter,
-  )
+  let evaluatedSampleCount = 0
   clipped.mesh.triangles.forEach(([aIndex, bIndex, cIndex]) => {
     const a = clipped.mesh.vertices[aIndex]
     const b = clipped.mesh.vertices[bIndex]
@@ -149,20 +152,27 @@ export function generateTerrainExposureLayer(
         bStep / divisions,
         cStep / divisions,
       )
-      const result = evaluatePoint({
-          eastMeters: point.eastMeters + normal.x * 1e-4,
-          elevationMeters: point.elevationMeters + normal.y * 1e-4,
-          northMeters: point.northMeters - normal.z * 1e-4,
-          normal: { east: normal.x, up: normal.y, north: -normal.z },
-      })
       const index = vertices.length
+      const previous = reuse?.previousLayer.spacingMeters === settings.spacingMeters
+        ? reuse.previousLayer.vertices[index]
+        : undefined
+      const canReuse = previous !== undefined &&
+        previous.eastMeters === point.eastMeters &&
+        previous.elevationMeters === point.elevationMeters &&
+        previous.northMeters === point.northMeters &&
+        !reuse?.shouldEvaluate(point)
+      const exposure = canReuse
+        ? previous.exposure
+        : preparedExposure.evaluate({
+            eastMeters: point.eastMeters + normal.x * 1e-4,
+            elevationMeters: point.elevationMeters + normal.y * 1e-4,
+            northMeters: point.northMeters - normal.z * 1e-4,
+            normal: { east: normal.x, up: normal.y, north: -normal.z },
+          })
+      if (!canReuse) evaluatedSampleCount += 1
       vertices.push({
         ...point,
-        directIrradianceWattsPerSquareMeter:
-          result.directIrradianceWattsPerSquareMeter,
-        diffuseIrradianceWattsPerSquareMeter: 0,
-        totalIrradianceWattsPerSquareMeter:
-          result.directIrradianceWattsPerSquareMeter,
+        exposure,
       })
       localIndices.set(key, index)
       return index
@@ -186,26 +196,31 @@ export function generateTerrainExposureLayer(
     }
   })
 
-  let minimumIrradianceWattsPerSquareMeter = Number.POSITIVE_INFINITY
-  let maximumIrradianceWattsPerSquareMeter = Number.NEGATIVE_INFINITY
-  vertices.forEach(({ directIrradianceWattsPerSquareMeter }) => {
-    minimumIrradianceWattsPerSquareMeter = Math.min(
-      minimumIrradianceWattsPerSquareMeter,
-      directIrradianceWattsPerSquareMeter,
+  let minimumValue = Number.POSITIVE_INFINITY
+  let maximumValue = Number.NEGATIVE_INFINITY
+  vertices.forEach(({ exposure }) => {
+    const value = exposure[settings.displayChannel]
+    minimumValue = Math.min(
+      minimumValue,
+      value,
     )
-    maximumIrradianceWattsPerSquareMeter = Math.max(
-      maximumIrradianceWattsPerSquareMeter,
-      directIrradianceWattsPerSquareMeter,
+    maximumValue = Math.max(
+      maximumValue,
+      value,
     )
   })
   return {
     vertices,
     triangles,
     spacingMeters: settings.spacingMeters,
-    minimumIrradianceWattsPerSquareMeter,
-    maximumIrradianceWattsPerSquareMeter,
-    scaleMaximumIrradianceWattsPerSquareMeter:
-      settings.directNormalIrradianceWattsPerSquareMeter,
+    minimumValue,
+    maximumValue,
+    scaleMaximum: preparedExposure.scaleMaximum,
     displayChannel: settings.displayChannel,
+    quantity: preparedExposure.quantity,
+    unit: preparedExposure.unit,
+    directionCount: preparedExposure.directionCount,
+    temporalSampleCount: preparedExposure.temporalSampleCount,
+    evaluatedSampleCount,
   }
 }

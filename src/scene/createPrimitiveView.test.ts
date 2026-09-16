@@ -165,29 +165,28 @@ describe('primitive scene view', () => {
         {
           position: { x: -1, y: 1, z: -1 },
           normal: { x: 0, y: 1, z: 0 },
-          directIrradianceWattsPerSquareMeter: 0,
-          diffuseIrradianceWattsPerSquareMeter: 0,
-          totalIrradianceWattsPerSquareMeter: 0,
+          exposure: { direct: 0, diffuse: 0, total: 0 },
         },
         {
           position: { x: 1, y: 1, z: -1 },
           normal: { x: 0, y: 1, z: 0 },
-          directIrradianceWattsPerSquareMeter: 400,
-          diffuseIrradianceWattsPerSquareMeter: 0,
-          totalIrradianceWattsPerSquareMeter: 400,
+          exposure: { direct: 400, diffuse: 0, total: 400 },
         },
         {
           position: { x: 0, y: 1, z: 1 },
           normal: { x: 0, y: 1, z: 0 },
-          directIrradianceWattsPerSquareMeter: 800,
-          diffuseIrradianceWattsPerSquareMeter: 0,
-          totalIrradianceWattsPerSquareMeter: 800,
+          exposure: { direct: 800, diffuse: 0, total: 800 },
         },
       ],
       triangles: [[0, 1, 2]],
       spacingMeters: 1,
-      scaleMaximumIrradianceWattsPerSquareMeter: 800,
+      scaleMaximum: 800,
       displayChannel: 'direct',
+      quantity: 'irradiance',
+      unit: 'W/m²',
+      directionCount: 1,
+      temporalSampleCount: 1,
+      evaluatedSampleCount: 3,
     }
 
     view.setExposureLayer(layer)

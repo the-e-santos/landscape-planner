@@ -163,6 +163,15 @@
   border-top: 1px solid #d9dfd8;
 }
 
+.solar-mode-field {
+  padding: 12px 0 10px;
+}
+
+.solar-mode-field + .solar-inputs {
+  padding-top: 0;
+  border-top: 0;
+}
+
 .solar-inputs .field {
   margin: 7px 0;
   font-size: 0.74rem;
@@ -235,6 +244,41 @@
   border-radius: 6px;
   color: #1f2d24;
   background: #fff;
+}
+
+.accumulation-settings {
+  margin: 8px -2px;
+  padding: 6px 8px;
+  border-radius: 7px;
+  background: rgb(229 238 231 / 70%);
+}
+
+.accumulation-settings input {
+  width: 142px;
+  box-sizing: border-box;
+  padding: 5px 6px;
+  border: 1px solid #c5cec5;
+  border-radius: 6px;
+  color: #1f2d24;
+  background: #fff;
+}
+
+.solar-progress {
+  display: grid;
+  gap: 2px;
+  margin-top: 9px;
+  padding-top: 8px;
+  border-top: 1px solid #d9dfd8;
+  color: #5c6c61;
+  font-size: 0.64rem;
+}
+
+.solar-progress strong {
+  color: #315f3f;
+}
+
+.solar-progress.error strong {
+  color: #9a3434;
 }
 
 .heatmap-legend {
