@@ -73,9 +73,14 @@ export function createTerrainView(
       1,
     )
     const colors = layer.vertices.flatMap((vertex) => {
+      const irradiance = layer.displayChannel === 'direct'
+        ? vertex.directIrradianceWattsPerSquareMeter
+        : layer.displayChannel === 'diffuse'
+          ? vertex.diffuseIrradianceWattsPerSquareMeter
+          : vertex.totalIrradianceWattsPerSquareMeter
       const ratio = Math.max(
         0,
-        Math.min(1, vertex.directIrradianceWattsPerSquareMeter / scaleMaximum),
+        Math.min(1, irradiance / scaleMaximum),
       )
       const color = ratio < 0.5
         ? low.clone().lerp(middle, ratio * 2)

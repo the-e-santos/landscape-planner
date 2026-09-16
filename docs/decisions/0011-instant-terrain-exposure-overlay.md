@@ -15,7 +15,7 @@ state or introducing a general atlas system prematurely.
 
 - Subdivide each clipped terrain triangle into a deterministic barycentric grid.
   The longest triangle edge determines the subdivision count for the selected
-  2 m, 1 m, or 0.5 m nominal spacing.
+  2 m, 1 m, 0.5 m, 0.25 m, or 0.1 m nominal spacing.
 - Evaluate instantaneous direct irradiance at every sampled vertex with the CPU
   point solver, using the triangle's geometric normal and a small outward origin
   offset.
@@ -31,5 +31,6 @@ state or introducing a general atlas system prematurely.
 Users can inspect an immediate terrain shadow layer and compare it with the point
 reference. Color interpolation makes the result continuous-looking but does not
 increase numerical resolution; the selected spacing remains visible in the UI.
-This increment samples terrain only. Primitive surface atlases, probe selection,
-diffuse channels, tiling, workers, and progressive refinement remain future work.
+Primitive surface atlases, probe selection, and explicit display channels were
+added in the next Milestone 8 increment and are documented in decision 0012.
+Tiling, workers, and progressive refinement remain future work.

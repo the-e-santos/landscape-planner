@@ -38,6 +38,7 @@ import {
 import { validateTerrain } from './domain/terrainValidation'
 import type { DisplayUnit } from './domain/units'
 import type { InstantSolarHeatmapSettings } from './solar/terrainExposure'
+import type { SurfacePoint } from './solar/pointSolar'
 import {
   clearProjectAutosave,
   loadProjectAutosave,
@@ -316,6 +317,9 @@ function App() {
   const [resizeProportionsLocked, setResizeProportionsLocked] = useState(false)
   const [solarHeatmapSettings, setSolarHeatmapSettings] =
     useState<InstantSolarHeatmapSettings>({ enabled: false })
+  const [solarProbeEnabled, setSolarProbeEnabled] = useState(false)
+  const [solarProbeSurface, setSolarProbeSurface] =
+    useState<SurfacePoint | null>(null)
   const [recoveryProject, setRecoveryProject] = useState<{
     project: LandscapeProject
     savedAt: string
@@ -429,6 +433,7 @@ function App() {
       }),
       onManipulationEnd: projectStore.commitTransaction,
       onManipulationCancel: projectStore.cancelTransaction,
+      onSolarProbe: setSolarProbeSurface,
     })
     yardSceneRef.current = yardScene
 
@@ -464,6 +469,10 @@ function App() {
   useEffect(() => {
     yardSceneRef.current?.setSolarHeatmap(solarHeatmapSettings)
   }, [solarHeatmapSettings])
+
+  useEffect(() => {
+    yardSceneRef.current?.setSolarProbeEnabled(solarProbeEnabled)
+  }, [solarProbeEnabled])
 
   useEffect(() => {
     const handleKeyDown = (event: KeyboardEvent) => {
@@ -578,6 +587,8 @@ function App() {
       <SolarAnalysisPanel
         project={project}
         onHeatmapChange={setSolarHeatmapSettings}
+        probedSurface={solarProbeSurface}
+        onProbeEnabledChange={setSolarProbeEnabled}
       />
       <ParcelEditor
         mode={mode}

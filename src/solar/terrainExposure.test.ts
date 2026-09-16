@@ -14,6 +14,7 @@ const settings = {
   },
   directNormalIrradianceWattsPerSquareMeter: 800,
   spacingMeters: 1,
+  displayChannel: 'direct',
 } as const
 
 describe('terrain exposure sampling', () => {

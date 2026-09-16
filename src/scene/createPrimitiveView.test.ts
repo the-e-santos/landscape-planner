@@ -3,6 +3,7 @@ import { describe, expect, it } from 'vitest'
 import { createDefaultHouseEntity } from '../domain/primitive'
 import type { PrimitiveEntity, PrimitiveGeometry } from '../domain/primitive'
 import { createPrimitiveView } from './createPrimitiveView'
+import type { PrimitiveExposureLayer } from '../solar/primitiveExposure'
 
 describe('primitive scene view', () => {
   it('projects a domain box into the project coordinate frame', () => {
@@ -152,6 +153,57 @@ describe('primitive scene view', () => {
 
     view.setSelected(false)
     expect(getMaterial().emissiveIntensity).toBe(0)
+    view.dispose()
+  })
+
+  it('adds and removes a local vertex-colored exposure atlas', () => {
+    const entity = createDefaultHouseEntity()
+    const view = createPrimitiveView(entity)
+    const layer: PrimitiveExposureLayer = {
+      entityId: entity.id,
+      vertices: [
+        {
+          position: { x: -1, y: 1, z: -1 },
+          normal: { x: 0, y: 1, z: 0 },
+          directIrradianceWattsPerSquareMeter: 0,
+          diffuseIrradianceWattsPerSquareMeter: 0,
+          totalIrradianceWattsPerSquareMeter: 0,
+        },
+        {
+          position: { x: 1, y: 1, z: -1 },
+          normal: { x: 0, y: 1, z: 0 },
+          directIrradianceWattsPerSquareMeter: 400,
+          diffuseIrradianceWattsPerSquareMeter: 0,
+          totalIrradianceWattsPerSquareMeter: 400,
+        },
+        {
+          position: { x: 0, y: 1, z: 1 },
+          normal: { x: 0, y: 1, z: 0 },
+          directIrradianceWattsPerSquareMeter: 800,
+          diffuseIrradianceWattsPerSquareMeter: 0,
+          totalIrradianceWattsPerSquareMeter: 800,
+        },
+      ],
+      triangles: [[0, 1, 2]],
+      spacingMeters: 1,
+      scaleMaximumIrradianceWattsPerSquareMeter: 800,
+      displayChannel: 'direct',
+    }
+
+    view.setExposureLayer(layer)
+    const overlay = view.object.getObjectByName(
+      `primitive-direct-exposure:${entity.id}`,
+    )
+    expect(overlay).toBeInstanceOf(THREE.Mesh)
+    if (overlay instanceof THREE.Mesh) {
+      expect(overlay.geometry.getAttribute('color').count).toBe(3)
+      expect(overlay.userData.entityId).toBe(entity.id)
+    }
+
+    view.setExposureLayer(null)
+    expect(view.object.getObjectByName(
+      `primitive-direct-exposure:${entity.id}`,
+    )).toBeUndefined()
     view.dispose()
   })
 })

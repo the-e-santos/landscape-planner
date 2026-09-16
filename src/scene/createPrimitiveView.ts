@@ -1,10 +1,12 @@
 import * as THREE from 'three/webgpu'
 import type { PrimitiveEntity } from '../domain/primitive'
+import type { PrimitiveExposureLayer } from '../solar/primitiveExposure'
 
 export interface PrimitiveView {
   readonly object: THREE.Group
   update(entity: PrimitiveEntity): void
   setSelected(selected: boolean): void
+  setExposureLayer(layer: PrimitiveExposureLayer | null): void
   dispose(): void
 }
 
@@ -85,6 +87,9 @@ function updateMaterial(
 export function createPrimitiveView(entity: PrimitiveEntity): PrimitiveView {
   const object = new THREE.Group()
   let geometry: THREE.BufferGeometry | undefined
+  let exposureGeometry: THREE.BufferGeometry | undefined
+  let exposureMaterial: THREE.MeshBasicMaterial | undefined
+  let exposureMesh: THREE.Mesh | undefined
   let selected = false
   const material = new THREE.MeshStandardMaterial({ color: 0xb8afa2 })
 
@@ -93,7 +98,71 @@ export function createPrimitiveView(entity: PrimitiveEntity): PrimitiveView {
     material.emissiveIntensity = selected ? 0.7 : 0
   }
 
+  const removeExposureLayer = () => {
+    exposureMesh?.removeFromParent()
+    exposureGeometry?.dispose()
+    exposureMaterial?.dispose()
+    exposureMesh = undefined
+    exposureGeometry = undefined
+    exposureMaterial = undefined
+  }
+
+  const setExposureLayer = (layer: PrimitiveExposureLayer | null) => {
+    removeExposureLayer()
+    object.userData.exposureLayer = layer
+    if (!layer) return
+    const low = new THREE.Color(0x28334f)
+    const middle = new THREE.Color(0x2f8b83)
+    const high = new THREE.Color(0xf1c75b)
+    const scaleMaximum = Math.max(
+      layer.scaleMaximumIrradianceWattsPerSquareMeter,
+      1,
+    )
+    const colors = layer.vertices.flatMap((vertex) => {
+      const irradiance = layer.displayChannel === 'direct'
+        ? vertex.directIrradianceWattsPerSquareMeter
+        : layer.displayChannel === 'diffuse'
+          ? vertex.diffuseIrradianceWattsPerSquareMeter
+          : vertex.totalIrradianceWattsPerSquareMeter
+      const ratio = Math.max(0, Math.min(1, irradiance / scaleMaximum))
+      const color = ratio < 0.5
+        ? low.clone().lerp(middle, ratio * 2)
+        : middle.clone().lerp(high, (ratio - 0.5) * 2)
+      return [color.r, color.g, color.b]
+    })
+    exposureGeometry = new THREE.BufferGeometry()
+    exposureGeometry.setAttribute(
+      'position',
+      new THREE.Float32BufferAttribute(
+        layer.vertices.flatMap(({ position, normal }) => [
+          position.x + normal.x * 0.01,
+          position.y + normal.y * 0.01,
+          position.z + normal.z * 0.01,
+        ]),
+        3,
+      ),
+    )
+    exposureGeometry.setAttribute(
+      'color',
+      new THREE.Float32BufferAttribute(colors, 3),
+    )
+    exposureGeometry.setIndex(layer.triangles.flatMap((triangle) => [...triangle]))
+    exposureMaterial = new THREE.MeshBasicMaterial({
+      vertexColors: true,
+      side: THREE.DoubleSide,
+      transparent: true,
+      opacity: 0.82,
+      depthWrite: false,
+    })
+    exposureMesh = new THREE.Mesh(exposureGeometry, exposureMaterial)
+    exposureMesh.name = `primitive-direct-exposure:${layer.entityId}`
+    exposureMesh.userData.entityId = layer.entityId
+    exposureMesh.renderOrder = 2
+    object.add(exposureMesh)
+  }
+
   const update = (nextEntity: PrimitiveEntity) => {
+    removeExposureLayer()
     object.clear()
     geometry?.dispose()
 
@@ -129,7 +198,9 @@ export function createPrimitiveView(entity: PrimitiveEntity): PrimitiveView {
       selected = nextSelected
       updateSelection()
     },
+    setExposureLayer,
     dispose: () => {
+      removeExposureLayer()
       geometry?.dispose()
       material.dispose()
       object.removeFromParent()

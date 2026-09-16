@@ -1,7 +1,10 @@
 import { describe, expect, it } from 'vitest'
 import { createDefaultProject } from '../domain/project'
 import type { PrimitiveEntity } from '../domain/primitive'
-import { queryDirectPointSolar } from './pointSolar'
+import {
+  createDirectPointSolarEvaluator,
+  queryDirectPointSolar,
+} from './pointSolar'
 
 const baseQuery = {
   solarPosition: {
@@ -60,5 +63,18 @@ describe('direct point solar query', () => {
       ...baseQuery,
       surface: { ...baseQuery.surface, normal: { east: 0, up: -1, north: 0 } },
     }).directIrradianceWattsPerSquareMeter).toBe(0)
+  })
+
+  it('supports a prepared evaluator for repeated surface samples', () => {
+    const project = createDefaultProject()
+    const evaluator = createDirectPointSolarEvaluator(
+      project,
+      baseQuery.solarPosition,
+      baseQuery.directNormalIrradianceWattsPerSquareMeter,
+    )
+
+    expect(evaluator(baseQuery.surface)).toEqual(
+      queryDirectPointSolar(project, baseQuery),
+    )
   })
 })

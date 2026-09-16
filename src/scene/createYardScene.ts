@@ -23,6 +23,8 @@ import {
   generateTerrainExposureLayer,
   type InstantSolarHeatmapSettings,
 } from '../solar/terrainExposure'
+import { generatePrimitiveExposureLayer } from '../solar/primitiveExposure'
+import type { SurfacePoint } from '../solar/pointSolar'
 
 interface SceneEntity {
   readonly id: string
@@ -87,6 +89,7 @@ export interface YardScene {
   setSnapSettings(settings: PrimitiveSnapSettings): void
   setResizeProportionsLocked(locked: boolean): void
   setSolarHeatmap(settings: InstantSolarHeatmapSettings): void
+  setSolarProbeEnabled(enabled: boolean): void
   dispose(): void
 }
 
@@ -105,6 +108,7 @@ export interface YardSceneOptions {
   readonly onPrimitiveChange?: (primitive: PrimitiveEntity) => void
   readonly onManipulationEnd?: () => void
   readonly onManipulationCancel?: () => void
+  readonly onSolarProbe?: (surface: SurfacePoint) => void
 }
 
 export function getPrimitiveEntityIdFromObject(
@@ -172,6 +176,23 @@ export function createYardScene(
   northArrow.name = 'true-north'
   scene.add(northArrow)
 
+  const probeMarkerMaterial = new THREE.MeshBasicMaterial({ color: 0xfff4a8 })
+  const probeMarkerGeometry = new THREE.SphereGeometry(0.14, 16, 10)
+  const probeMarker = new THREE.Group()
+  const probePoint = new THREE.Mesh(probeMarkerGeometry, probeMarkerMaterial)
+  const probeNormal = new THREE.ArrowHelper(
+    new THREE.Vector3(0, 1, 0),
+    new THREE.Vector3(),
+    0.8,
+    0xfff4a8,
+    0.22,
+    0.12,
+  )
+  probeMarker.name = 'solar-probe-marker'
+  probeMarker.visible = false
+  probeMarker.add(probePoint, probeNormal)
+  scene.add(probeMarker)
+
   const parcelViews = new Map<
     string,
     SceneViewEntry<ParcelEntity, ParcelView>
@@ -197,10 +218,12 @@ export function createYardScene(
   }
   let currentProject: LandscapeProject | undefined
   let heatmapSettings: InstantSolarHeatmapSettings = { enabled: false }
+  let solarProbeEnabled = false
 
   const updateSolarHeatmap = () => {
     if (!currentProject || !heatmapSettings.enabled || manipulating) {
       terrainViews.forEach(({ view }) => view.setExposureLayer(null))
+      primitiveViews.forEach(({ view }) => view.setExposureLayer(null))
       return
     }
     const parcel = currentProject.entities.find(
@@ -212,6 +235,23 @@ export function createYardScene(
           currentProject!,
           terrain,
           parcel,
+          heatmapSettings as Extract<
+            InstantSolarHeatmapSettings,
+            { readonly enabled: true }
+          >,
+        ))
+      } catch (error) {
+        view.setExposureLayer(null)
+        view.object.userData.exposureError = error instanceof Error
+          ? error.message
+          : 'Exposure calculation failed'
+      }
+    })
+    primitiveViews.forEach(({ entity, view }) => {
+      try {
+        view.setExposureLayer(generatePrimitiveExposureLayer(
+          currentProject!,
+          entity,
           heatmapSettings as Extract<
             InstantSolarHeatmapSettings,
             { readonly enabled: true }
@@ -350,6 +390,40 @@ export function createYardScene(
       -((event.clientY - bounds.top) / bounds.height) * 2 + 1,
     )
     raycaster.setFromCamera(pointer, camera)
+    if (solarProbeEnabled) {
+      const probeRoots = [
+        ...terrainViews.values(),
+        ...primitiveViews.values(),
+      ].map(({ view }) => view.object)
+      const intersection = raycaster.intersectObjects(probeRoots, true).find(
+        ({ object, face }) =>
+          face && (
+            object.name === 'terrain-surface' ||
+            object.name.startsWith('primitive-mesh:')
+          ),
+      )
+      if (!intersection?.face) return
+      const normal = intersection.face.normal.clone().transformDirection(
+        intersection.object.matrixWorld,
+      ).normalize()
+      const entityId = getPrimitiveEntityIdFromObject(intersection.object)
+      const owningEntityId = currentProject?.entities.some(
+        (entity) => entity.id === entityId && entity.kind === 'primitive',
+      )
+        ? entityId ?? undefined
+        : undefined
+      probeMarker.position.copy(intersection.point)
+      probeNormal.setDirection(normal)
+      probeMarker.visible = true
+      options.onSolarProbe?.({
+        eastMeters: intersection.point.x,
+        elevationMeters: intersection.point.y,
+        northMeters: -intersection.point.z,
+        normal: { east: normal.x, up: normal.y, north: -normal.z },
+        ...(owningEntityId ? { owningEntityId } : {}),
+      })
+      return
+    }
     const roots = [...primitiveViews.values()].map(({ view }) => view.object)
     const intersection = raycaster.intersectObjects(roots, true)[0]
     options.onSelectionChange?.(
@@ -482,6 +556,10 @@ export function createYardScene(
       heatmapSettings = settings
       updateSolarHeatmap()
     },
+    setSolarProbeEnabled: (enabled) => {
+      solarProbeEnabled = enabled
+      if (!enabled) probeMarker.visible = false
+    },
     dispose: () => {
       if (manipulating) {
         options.onManipulationCancel?.()
@@ -519,6 +597,12 @@ export function createYardScene(
       terrainViews.clear()
       primitiveViews.forEach(({ view }) => view.dispose())
       primitiveViews.clear()
+      probeMarkerGeometry.dispose()
+      probeMarkerMaterial.dispose()
+      probeNormal.line.geometry.dispose()
+      probeNormal.cone.geometry.dispose()
+      ;(probeNormal.line.material as THREE.Material).dispose()
+      ;(probeNormal.cone.material as THREE.Material).dispose()
       renderer.dispose()
       renderer.domElement.remove()
     },
