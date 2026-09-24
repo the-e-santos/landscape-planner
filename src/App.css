@@ -166,6 +166,7 @@
 .parcel-panel,
 .terrain-panel,
 .object-panel,
+.landscape-panel,
 .solar-panel {
   position: absolute;
   top: 16px;
@@ -506,6 +507,53 @@
   transform: translateX(-50%);
 }
 
+.landscape-panel {
+  right: 16px;
+  bottom: 16px;
+  top: auto;
+  width: min(380px, calc(100vw - 32px));
+  max-height: min(72vh, 760px);
+  padding: 14px;
+}
+
+.landscape-text-input {
+  width: 165px;
+  min-width: 0;
+  box-sizing: border-box;
+  padding: 7px 9px;
+  border: 1px solid #c5cec5;
+  border-radius: 7px;
+  color: #1f2d24;
+  background: #fff;
+}
+
+.landscape-footprint {
+  padding-top: 12px;
+  border-top: 1px solid #d9dfd8;
+}
+
+.landscape-memberships {
+  display: grid;
+  gap: 7px;
+  margin: 14px 0 0;
+  padding: 12px;
+  border: 1px solid #d9dfd8;
+  border-radius: 9px;
+}
+
+.landscape-memberships legend {
+  padding: 0 5px;
+  font-size: 0.78rem;
+  font-weight: 700;
+}
+
+.landscape-memberships label {
+  display: flex;
+  gap: 8px;
+  align-items: center;
+  font-size: 0.8rem;
+}
+
 .object-toolbar {
   display: flex;
   align-items: center;
@@ -802,7 +850,8 @@
 
 .parcel-panel.panel-collapsed,
 .terrain-panel.panel-collapsed,
-.object-panel.panel-collapsed {
+.object-panel.panel-collapsed,
+.landscape-panel.panel-collapsed {
   width: auto;
   min-width: 205px;
   max-height: none;
@@ -816,7 +865,8 @@
 
 .parcel-panel.panel-collapsed header,
 .terrain-panel.panel-collapsed header,
-.object-panel.panel-collapsed header {
+.object-panel.panel-collapsed header,
+.landscape-panel.panel-collapsed header {
   margin-bottom: 0;
 }
 
@@ -839,7 +889,8 @@
 
 .parcel-panel.panel-collapsed h1,
 .terrain-panel.panel-collapsed h1,
-.object-panel.panel-collapsed h1 {
+.object-panel.panel-collapsed h1,
+.landscape-panel.panel-collapsed h1 {
   margin-bottom: 0;
   font-size: 1rem;
 }
@@ -1413,6 +1464,13 @@ button:disabled {
     max-height: 30vh;
   }
 
+  .landscape-panel {
+    right: 10px;
+    bottom: 10px;
+    width: calc(100vw - 20px);
+    max-height: 48vh;
+  }
+
   .solar-panel {
     top: 62px;
     left: auto;
@@ -1424,7 +1482,8 @@ button:disabled {
 
   .parcel-panel.panel-collapsed,
   .terrain-panel.panel-collapsed,
-  .object-panel.panel-collapsed {
+  .object-panel.panel-collapsed,
+  .landscape-panel.panel-collapsed {
     width: auto;
     min-width: 205px;
     padding: 12px 14px;

@@ -3,6 +3,7 @@ export type WorkspacePanelId =
   | 'parcel'
   | 'terrain'
   | 'objects'
+  | 'landscape'
   | 'solar'
 
 export type WorkspacePanelVisibility = Readonly<Record<WorkspacePanelId, boolean>>
@@ -20,6 +21,7 @@ const panels: ReadonlyArray<{
   { id: 'parcel', label: 'Parcel' },
   { id: 'terrain', label: 'Terrain' },
   { id: 'objects', label: 'Objects' },
+  { id: 'landscape', label: 'Landscape' },
   { id: 'solar', label: 'Solar' },
 ]
 

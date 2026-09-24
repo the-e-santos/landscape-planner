@@ -6,6 +6,10 @@ import {
   type PrimitiveCreationKind,
 } from './components/ObjectEditor'
 import { TerrainEditor } from './components/TerrainEditor'
+import {
+  LandscapeEditor,
+  type LandscapeCreationKind,
+} from './components/LandscapeEditor'
 import { SolarAnalysisPanel } from './components/SolarAnalysisPanel'
 import {
   PanelPalette,
@@ -42,6 +46,12 @@ import {
 } from './domain/terrain'
 import { validateTerrain } from './domain/terrainValidation'
 import type { DisplayUnit } from './domain/units'
+import type {
+  IrrigationZoneEntity,
+  LandscapeSemanticEntity,
+  PlantEntity,
+  PlantingBedEntity,
+} from './domain/landscape'
 import type {
   SolarCalculationProgress,
   SolarHeatmapSettings,
@@ -307,12 +317,90 @@ function duplicateUserPrimitive(
   }
 }
 
+function nextLandscapeId(
+  prefix: string,
+  entityIds: ReadonlySet<string>,
+): { readonly id: string; readonly sequence: number } {
+  let sequence = 1
+  let id = `${prefix}.user-${sequence}`
+  while (entityIds.has(id)) {
+    sequence += 1
+    id = `${prefix}.user-${sequence}`
+  }
+  return { id, sequence }
+}
+
+function createUserLandscapeEntity(
+  kind: LandscapeCreationKind,
+  entities: readonly LandscapeSemanticEntity[],
+  projectEntityIds: ReadonlySet<string>,
+): LandscapeSemanticEntity {
+  const kindEntities = entities.filter((entity) => entity.kind === kind)
+  const placementIndex = kindEntities.length
+  const centerEast = -9 + (placementIndex % 5) * 4
+  const centerNorth = 5 + Math.floor(placementIndex / 5) * 4
+  const footprint = [
+    { eastMeters: centerEast - 1.5, northMeters: centerNorth - 1 },
+    { eastMeters: centerEast + 1.5, northMeters: centerNorth - 1 },
+    { eastMeters: centerEast + 1.5, northMeters: centerNorth + 1 },
+    { eastMeters: centerEast - 1.5, northMeters: centerNorth + 1 },
+  ]
+
+  switch (kind) {
+    case 'plantingBed': {
+      const { id, sequence } = nextLandscapeId('bed', projectEntityIds)
+      return {
+        id,
+        kind,
+        name: `Planting bed ${sequence}`,
+        footprint,
+        soil: {
+          texture: 'unknown',
+          drainage: 'unknown',
+          surfaceCover: 'bareSoil',
+          usableRootDepthMeters: 0.45,
+        },
+      }
+    }
+    case 'irrigationZone': {
+      const { id, sequence } = nextLandscapeId('irrigation', projectEntityIds)
+      return {
+        id,
+        kind,
+        name: `Irrigation zone ${sequence}`,
+        footprint,
+        deliveryMethod: 'drip',
+        weeklyTargetMillimeters: 25,
+      }
+    }
+    case 'plant': {
+      const { id, sequence } = nextLandscapeId('plant', projectEntityIds)
+      return {
+        id,
+        kind,
+        name: `Plant ${sequence}`,
+        taxonId: `taxon:unidentified-${sequence}`,
+        scientificName: 'Unidentified plant',
+        position: {
+          eastMeters: centerEast,
+          elevationMeters: 1,
+          northMeters: centerNorth,
+        },
+        canopyRadiusMeters: 0.75,
+        irrigationZoneIds: [],
+      }
+    }
+  }
+}
+
 function App() {
   const viewportRef = useRef<HTMLDivElement>(null)
   const yardSceneRef = useRef<YardScene | null>(null)
   const [mode, setMode] = useState<ParcelMode>('rectangle')
   const [unit, setUnit] = useState<DisplayUnit>('meters')
   const [selectedEntityId, setSelectedEntityId] = useState<string | null>(null)
+  const [selectedLandscapeEntityId, setSelectedLandscapeEntityId] =
+    useState<string | null>(null)
   const [manipulationMode, setManipulationMode] =
     useState<PrimitiveManipulationMode>('translate')
   const [snapSettings, setSnapSettings] = useState<PrimitiveSnapSettings>({
@@ -329,6 +417,7 @@ function App() {
       parcel: true,
       terrain: false,
       objects: false,
+      landscape: false,
       solar: false,
     })
   const [solarHeatmapSettings, setSolarHeatmapSettings] =
@@ -370,6 +459,39 @@ function App() {
     ),
     [project],
   )
+  const landscapeEntities = useMemo(
+    () => project.entities.filter(
+      (entity): entity is LandscapeSemanticEntity =>
+        entity.kind === 'plantingBed' ||
+        entity.kind === 'irrigationZone' ||
+        entity.kind === 'plant',
+    ),
+    [project],
+  )
+  const plantingBeds = useMemo(
+    () => landscapeEntities.filter(
+      (entity): entity is PlantingBedEntity => entity.kind === 'plantingBed',
+    ),
+    [landscapeEntities],
+  )
+  const irrigationZones = useMemo(
+    () => landscapeEntities.filter(
+      (entity): entity is IrrigationZoneEntity =>
+        entity.kind === 'irrigationZone',
+    ),
+    [landscapeEntities],
+  )
+  const plants = useMemo(
+    () => landscapeEntities.filter(
+      (entity): entity is PlantEntity => entity.kind === 'plant',
+    ),
+    [landscapeEntities],
+  )
+  const activeSelectedLandscapeEntityId = landscapeEntities.some(
+    ({ id }) => id === selectedLandscapeEntityId,
+  )
+    ? selectedLandscapeEntityId
+    : null
   const activeSelectedEntityId = primitives.some(
     ({ id }) => id === selectedEntityId,
   )
@@ -593,6 +715,7 @@ function App() {
               projectStore.replaceProject(loadedProject)
               setMode('polygon')
               setSelectedEntityId(null)
+              setSelectedLandscapeEntityId(null)
               setRecoveryProject(null)
               setAutosaveEnabled(true)
               setPersistenceError(null)
@@ -607,6 +730,7 @@ function App() {
           projectStore.replaceProject(recoveryProject.project)
           setMode('polygon')
           setSelectedEntityId(null)
+          setSelectedLandscapeEntityId(null)
           setRecoveryProject(null)
           setAutosaveEnabled(true)
           setPersistenceError(null)
@@ -788,6 +912,44 @@ function App() {
         onUndo={projectStore.undo}
         onRedo={projectStore.redo}
           onClose={() => closePanel('objects')}
+        />
+      </div>
+      <div hidden={!panelVisibility.landscape}>
+        <LandscapeEditor
+          plantingBeds={plantingBeds}
+          irrigationZones={irrigationZones}
+          plants={plants}
+          selectedEntityId={activeSelectedLandscapeEntityId}
+          unit={unit}
+          canUndo={projectStore.canUndo()}
+          canRedo={projectStore.canRedo()}
+          onAdd={(kind) => {
+            const entity = createUserLandscapeEntity(
+              kind,
+              landscapeEntities,
+              new Set(project.entities.map(({ id }) => id)),
+            )
+            projectStore.dispatch({
+              type: 'landscapeSemantic.add',
+              entity,
+            })
+            setSelectedLandscapeEntityId(entity.id)
+          }}
+          onSelect={setSelectedLandscapeEntityId}
+          onReplace={(entity) => projectStore.dispatch({
+            type: 'landscapeSemantic.replace',
+            entity,
+          })}
+          onRemove={(entityId) => {
+            projectStore.dispatch({
+              type: 'landscapeSemantic.remove',
+              entityId,
+            })
+            setSelectedLandscapeEntityId(null)
+          }}
+          onUndo={projectStore.undo}
+          onRedo={projectStore.redo}
+          onClose={() => closePanel('landscape')}
         />
       </div>
     </main>
