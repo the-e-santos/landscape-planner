@@ -2,10 +2,12 @@ import { describe, expect, it } from 'vitest'
 import { createDefaultProject } from '../domain/project'
 import type { PrimitiveEntity } from '../domain/primitive'
 import {
+  buildClimateDirectDirectionSet,
   buildDirectDirectionSet,
   createAccumulatedDirectEvaluator,
   type DirectExposurePeriod,
 } from './accumulatedDirect'
+import { createSyntheticClimateModel } from './syntheticClimate'
 
 const equinoxDay: DirectExposurePeriod = {
   startDate: { year: 2024, month: 3, day: 20 },
@@ -120,5 +122,45 @@ describe('accumulated direct exposure', () => {
     }, 24)).toThrow('end date')
     expect(() => buildDirectDirectionSet(equinoxDay, 0))
       .toThrow('positive integer')
+  })
+
+  it('uses overcast probability as an expected-value DNI weight', () => {
+    const climate = createSyntheticClimateModel({
+      clear: {
+        directNormalIrradianceWattsPerSquareMeter: 800,
+        diffuseHorizontalIrradianceWattsPerSquareMeter: 100,
+      },
+      overcast: {
+        directNormalIrradianceWattsPerSquareMeter: 200,
+        diffuseHorizontalIrradianceWattsPerSquareMeter: 300,
+      },
+    })
+    const basePeriod = {
+      startDate: equinoxDay.startDate,
+      endDate: equinoxDay.endDate,
+      latitudeRadians: equinoxDay.latitudeRadians,
+      timeStepMinutes: equinoxDay.timeStepMinutes,
+    }
+    const clear = buildClimateDirectDirectionSet({
+      ...basePeriod,
+      overcastProbabilityCurve: [
+        { localSolarTimeHours: 0, probability: 0 },
+        { localSolarTimeHours: 24, probability: 0 },
+      ],
+    }, 256, climate)
+    const mixed = buildClimateDirectDirectionSet({
+      ...basePeriod,
+      overcastProbabilityCurve: [
+        { localSolarTimeHours: 0, probability: 0.5 },
+        { localSolarTimeHours: 24, probability: 0.5 },
+      ],
+    }, 256, climate)
+
+    expect(mixed.totalDirectNormalExposureKilowattHoursPerSquareMeter)
+      .toBeCloseTo(
+        clear.totalDirectNormalExposureKilowattHoursPerSquareMeter * 0.625,
+        10,
+      )
+    expect(mixed.temporalSampleCount).toBe(clear.temporalSampleCount)
   })
 })

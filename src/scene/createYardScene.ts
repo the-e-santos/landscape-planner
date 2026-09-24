@@ -298,8 +298,8 @@ export function createYardScene(
         stageCount: stages.length,
         spacingMeters: stage.spacingMeters,
         directionCount: stage.analysisMode === 'accumulated'
-          ? stage.maximumDirections
-          : 1,
+          ? stage.maximumDirections + 145
+          : 146,
         message: stageIndex === 0
           ? 'Calculating coarse exposure preview…'
           : 'Refining exposure…',

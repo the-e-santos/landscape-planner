@@ -5,6 +5,7 @@ import {
   generatePrimitiveExposureLayer,
   samplePrimitiveSurface,
 } from './primitiveExposure'
+import { DEFAULT_SYNTHETIC_CLIMATE } from './syntheticClimate'
 
 function primitive(geometry: PrimitiveGeometry): PrimitiveEntity {
   return {
@@ -47,12 +48,13 @@ const geometries: readonly PrimitiveGeometry[] = [
 const settings = {
   enabled: true,
   analysisMode: 'instant',
+  climateParameters: DEFAULT_SYNTHETIC_CLIMATE,
+  skyCondition: 'clear',
   solarPosition: {
     date: { year: 2024, month: 3, day: 20 },
     latitudeRadians: 0,
     localSolarTimeHours: 12,
   },
-  directNormalIrradianceWattsPerSquareMeter: 800,
   spacingMeters: 0.75,
   displayChannel: 'direct',
 } as const

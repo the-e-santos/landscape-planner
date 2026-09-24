@@ -4,16 +4,18 @@ import { createDefaultProject } from '../domain/project'
 import type { PrimitiveEntity } from '../domain/primitive'
 import { createFlatTerrainEntity } from '../domain/terrain'
 import { generateTerrainExposureLayer } from './terrainExposure'
+import { DEFAULT_SYNTHETIC_CLIMATE } from './syntheticClimate'
 
 const settings = {
   enabled: true,
   analysisMode: 'instant',
+  climateParameters: DEFAULT_SYNTHETIC_CLIMATE,
+  skyCondition: 'clear',
   solarPosition: {
     date: { year: 2024, month: 3, day: 20 },
     latitudeRadians: 0,
     localSolarTimeHours: 12,
   },
-  directNormalIrradianceWattsPerSquareMeter: 800,
   spacingMeters: 1,
   displayChannel: 'direct',
 } as const

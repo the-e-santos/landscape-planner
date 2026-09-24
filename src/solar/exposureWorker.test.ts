@@ -4,6 +4,7 @@ import { createDefaultProject, getTerrainEntity } from '../domain/project'
 import { DEFAULT_TERRAIN_ID } from '../domain/terrain'
 import { computeExposureWorkerRequest } from './exposureWorker'
 import type { ExposureWorkerRequest } from './exposureWorker'
+import { DEFAULT_SYNTHETIC_CLIMATE } from './syntheticClimate'
 
 describe('exposure worker computation', () => {
   it('returns cloneable progressive layer data and metadata', () => {
@@ -22,12 +23,16 @@ describe('exposure worker computation', () => {
       settings: {
         enabled: true,
         analysisMode: 'accumulated',
+        climateParameters: DEFAULT_SYNTHETIC_CLIMATE,
         period: {
           startDate: { year: 2024, month: 6, day: 20 },
           endDate: { year: 2024, month: 6, day: 20 },
           latitudeRadians: 0.5,
-          directNormalIrradianceWattsPerSquareMeter: 800,
           timeStepMinutes: 120,
+          overcastProbabilityCurve: [
+            { localSolarTimeHours: 0, probability: 0.25 },
+            { localSolarTimeHours: 24, probability: 0.25 },
+          ],
         },
         maximumDirections: 12,
         spacingMeters: 2,
@@ -45,7 +50,7 @@ describe('exposure worker computation', () => {
     if (!response.ok) return
     expect(response.revision).toBe(7)
     expect(response.unit).toBe('kWh/m²')
-    expect(response.directionCount).toBeLessThanOrEqual(12)
+    expect(response.directionCount).toBeLessThanOrEqual(12 + 145)
     expect(response.surfaceSampleCount).toBeGreaterThan(0)
     expect(response.evaluatedSurfaceSampleCount).toBe(
       response.surfaceSampleCount,

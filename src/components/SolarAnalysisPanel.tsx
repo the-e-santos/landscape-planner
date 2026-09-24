@@ -17,6 +17,8 @@ import type {
 } from '../solar/exposureSettings'
 import { prepareSurfaceExposure } from '../solar/exposureSettings'
 import { useDraggablePanel } from './useDraggablePanel'
+import type { SyntheticSkyCondition } from '../solar/climateModel'
+import type { SyntheticClimateParameters } from '../solar/syntheticClimate'
 
 interface SolarAnalysisPanelProps {
   readonly project: LandscapeProject
@@ -72,6 +74,14 @@ export function SolarAnalysisPanel({
   const [solarTimeHours, setSolarTimeHours] = useState(12)
   const [latitudeDegrees, setLatitudeDegrees] = useState(40)
   const [dni, setDni] = useState(800)
+  const [clearDhi, setClearDhi] = useState(120)
+  const [overcastDni, setOvercastDni] = useState(0)
+  const [overcastDhi, setOvercastDhi] = useState(250)
+  const [skyCondition, setSkyCondition] =
+    useState<SyntheticSkyCondition>('clear')
+  const [morningOvercastPercent, setMorningOvercastPercent] = useState(45)
+  const [noonOvercastPercent, setNoonOvercastPercent] = useState(25)
+  const [eveningOvercastPercent, setEveningOvercastPercent] = useState(50)
   const [heatmapEnabled, setHeatmapEnabled] = useState(false)
   const [heatmapSpacingMeters, setHeatmapSpacingMeters] = useState(1)
   const [displayChannel, setDisplayChannel] =
@@ -105,6 +115,17 @@ export function SolarAnalysisPanel({
         : pointEdit.values,
     [pointEdit, probedSurface],
   )
+  const climateParameters = useMemo<SyntheticClimateParameters>(() => ({
+    clear: {
+      directNormalIrradianceWattsPerSquareMeter: dni,
+      diffuseHorizontalIrradianceWattsPerSquareMeter: clearDhi,
+    },
+    overcast: {
+      directNormalIrradianceWattsPerSquareMeter: overcastDni,
+      diffuseHorizontalIrradianceWattsPerSquareMeter: overcastDhi,
+    },
+  }), [clearDhi, dni, overcastDhi, overcastDni])
+  const selectedDni = skyCondition === 'clear' ? dni : overcastDni
   const calculation = useMemo(() => {
     try {
       return {
@@ -114,7 +135,7 @@ export function SolarAnalysisPanel({
             latitudeRadians: degreesToRadians(latitudeDegrees),
             localSolarTimeHours: solarTimeHours,
           },
-          directNormalIrradianceWattsPerSquareMeter: dni,
+          directNormalIrradianceWattsPerSquareMeter: selectedDni,
           surface: {
             eastMeters: point.eastMeters,
             elevationMeters: point.elevationMeters,
@@ -137,7 +158,7 @@ export function SolarAnalysisPanel({
         error: error instanceof Error ? error.message : 'Solar query failed',
       }
     }
-  }, [date, dni, latitudeDegrees, point, project, solarTimeHours])
+  }, [date, latitudeDegrees, point, project, selectedDni, solarTimeHours])
   const updatePoint = (key: keyof PointInputs, value: number) => {
     setPointEdit({
       source: probedSurface,
@@ -151,7 +172,10 @@ export function SolarAnalysisPanel({
   const result = calculation.result
   const analysisSettings = useMemo<SolarHeatmapSettings>(() => {
     try {
-      if (!Number.isFinite(dni) || dni < 0) throw new Error('Invalid DNI')
+      const irradiances = [dni, clearDhi, overcastDni, overcastDhi]
+      if (irradiances.some((value) => !Number.isFinite(value) || value < 0)) {
+        throw new Error('Invalid synthetic climate irradiance')
+      }
       if (!Number.isFinite(heatmapSpacingMeters) || heatmapSpacingMeters <= 0) {
         throw new Error('Invalid spacing')
       }
@@ -165,8 +189,9 @@ export function SolarAnalysisPanel({
         return {
           enabled: true,
           analysisMode,
+          climateParameters,
+          skyCondition,
           solarPosition,
-          directNormalIrradianceWattsPerSquareMeter: dni,
           spacingMeters: heatmapSpacingMeters,
           displayChannel,
         }
@@ -174,12 +199,17 @@ export function SolarAnalysisPanel({
       return {
         enabled: true,
         analysisMode,
+        climateParameters,
         period: {
           startDate: parseDate(periodStartDate),
           endDate: parseDate(periodEndDate),
           latitudeRadians: degreesToRadians(latitudeDegrees),
-          directNormalIrradianceWattsPerSquareMeter: dni,
           timeStepMinutes: temporalStepMinutes,
+          overcastProbabilityCurve: [
+            { localSolarTimeHours: 6, probability: morningOvercastPercent / 100 },
+            { localSolarTimeHours: 12, probability: noonOvercastPercent / 100 },
+            { localSolarTimeHours: 18, probability: eveningOvercastPercent / 100 },
+          ],
         },
         maximumDirections,
         spacingMeters: heatmapSpacingMeters,
@@ -188,7 +218,7 @@ export function SolarAnalysisPanel({
     } catch {
       return { enabled: false }
     }
-  }, [analysisMode, date, displayChannel, dni, heatmapSpacingMeters, latitudeDegrees, maximumDirections, periodEndDate, periodStartDate, solarTimeHours, temporalStepMinutes])
+  }, [analysisMode, clearDhi, climateParameters, date, displayChannel, dni, eveningOvercastPercent, heatmapSpacingMeters, latitudeDegrees, maximumDirections, morningOvercastPercent, noonOvercastPercent, overcastDhi, overcastDni, periodEndDate, periodStartDate, skyCondition, solarTimeHours, temporalStepMinutes])
   const heatmapSettings = useMemo<SolarHeatmapSettings>(
     () => heatmapEnabled ? analysisSettings : { enabled: false },
     [analysisSettings, heatmapEnabled],
@@ -225,6 +255,38 @@ export function SolarAnalysisPanel({
       }
     }
   }, [analysisSettings, point, project])
+  const instantPointCalculation = useMemo(() => {
+    if (
+      !analysisSettings.enabled ||
+      analysisSettings.analysisMode !== 'instant'
+    ) return { exposure: null, error: null }
+    try {
+      const prepared = prepareSurfaceExposure(project, analysisSettings)
+      return {
+        exposure: prepared.evaluate({
+          eastMeters: point.eastMeters,
+          elevationMeters: point.elevationMeters,
+          northMeters: point.northMeters,
+          normal: {
+            east: point.normalEast,
+            up: point.normalUp,
+            north: point.normalNorth,
+          },
+          ...(point.owningEntityId
+            ? { owningEntityId: point.owningEntityId }
+            : {}),
+        }),
+        error: null,
+      }
+    } catch (error) {
+      return {
+        exposure: null,
+        error: error instanceof Error
+          ? error.message
+          : 'Instant point query failed',
+      }
+    }
+  }, [analysisSettings, point, project])
 
   useEffect(() => {
     onHeatmapChange(heatmapSettings)
@@ -245,7 +307,7 @@ export function SolarAnalysisPanel({
         {...dragHandleProps}
       >
         <div>
-          <p className="eyebrow">Milestone 9 analysis</p>
+          <p className="eyebrow">Milestone 10 analysis</p>
           <h1>
             {analysisMode === 'instant'
               ? 'Instant exposure'
@@ -270,7 +332,7 @@ export function SolarAnalysisPanel({
         <p className="panel-intro">
           {analysisMode === 'instant'
             ? 'CPU-reference values and surface exposure at one solar instant.'
-            : 'Direct exposure accumulated across a selected calendar period.'}
+            : 'Direct and diffuse exposure accumulated across a selected calendar period.'}
         </p>
         <fieldset className="segmented-field solar-mode-field">
           <legend>Exposure period</legend>
@@ -308,6 +370,18 @@ export function SolarAnalysisPanel({
                   value={solarTimeHours}
                   onChange={(event) => setSolarTimeHours(event.target.valueAsNumber)}
                 />
+              </label>
+              <label className="field">
+                <span>Sky condition</span>
+                <select
+                  value={skyCondition}
+                  onChange={(event) => setSkyCondition(
+                    event.target.value as SyntheticSkyCondition,
+                  )}
+                >
+                  <option value="clear">Clear</option>
+                  <option value="overcast">Overcast</option>
+                </select>
               </label>
             </>
           ) : (
@@ -352,6 +426,22 @@ export function SolarAnalysisPanel({
                   <option value={256}>256 · analysis</option>
                 </select>
               </label>
+              {([
+                ['Morning overcast', morningOvercastPercent, setMorningOvercastPercent],
+                ['Noon overcast', noonOvercastPercent, setNoonOvercastPercent],
+                ['Evening overcast', eveningOvercastPercent, setEveningOvercastPercent],
+              ] as const).map(([label, value, setter]) => (
+                <label className="field" key={label}>
+                  <span>{label}</span>
+                  <span className="solar-number-input">
+                    <input
+                      type="number" min="0" max="100" step="5" value={value}
+                      onChange={(event) => setter(event.target.valueAsNumber)}
+                    />
+                    <span>%</span>
+                  </span>
+                </label>
+              ))}
             </div>
           )}
           <label className="field">
@@ -366,11 +456,41 @@ export function SolarAnalysisPanel({
             </span>
           </label>
           <label className="field">
-            <span>DNI</span>
+            <span>Clear DNI</span>
             <span className="solar-number-input">
               <input
                 type="number" min="0" step="10" value={dni}
                 onChange={(event) => setDni(event.target.valueAsNumber)}
+              />
+              <span>W/m²</span>
+            </span>
+          </label>
+          <label className="field">
+            <span>Clear DHI</span>
+            <span className="solar-number-input">
+              <input
+                type="number" min="0" step="10" value={clearDhi}
+                onChange={(event) => setClearDhi(event.target.valueAsNumber)}
+              />
+              <span>W/m²</span>
+            </span>
+          </label>
+          <label className="field">
+            <span>Overcast DNI</span>
+            <span className="solar-number-input">
+              <input
+                type="number" min="0" step="10" value={overcastDni}
+                onChange={(event) => setOvercastDni(event.target.valueAsNumber)}
+              />
+              <span>W/m²</span>
+            </span>
+          </label>
+          <label className="field">
+            <span>Overcast DHI</span>
+            <span className="solar-number-input">
+              <input
+                type="number" min="0" step="10" value={overcastDhi}
+                onChange={(event) => setOvercastDhi(event.target.valueAsNumber)}
               />
               <span>W/m²</span>
             </span>
@@ -395,7 +515,7 @@ export function SolarAnalysisPanel({
               )}
             >
               <option value="direct">Direct</option>
-              <option value="diffuse">Diffuse · placeholder</option>
+              <option value="diffuse">Diffuse sky</option>
               <option value="total">Total</option>
             </select>
           </label>
@@ -424,9 +544,8 @@ export function SolarAnalysisPanel({
             </span>
           </div>
           <p className="field-note">
-            Instant irradiance on terrain and primitives. Diffuse is an explicit
-            zero-valued placeholder; total currently equals direct. Detailed
-            spacing can take noticeably longer on large parcels.
+            Direct and 145-patch diffuse exposure on terrain and primitives.
+            Detailed spacing can take noticeably longer on large parcels.
           </p>
           {heatmapEnabled && (
             <div className={`solar-progress ${progress.status}`} role="status">
@@ -523,35 +642,40 @@ export function SolarAnalysisPanel({
         ) : analysisMode === 'accumulated' && accumulatedPointCalculation.exposure ? (
           <section className="solar-results" aria-live="polite">
             <div className="solar-primary-result">
-              <strong>{formatNumber(accumulatedPointCalculation.exposure.direct, 2)}</strong>
-              <span>kWh/m² accumulated direct</span>
+              <strong>{formatNumber(accumulatedPointCalculation.exposure.total, 2)}</strong>
+              <span>kWh/m² accumulated total</span>
             </div>
             <div className="solar-channel-results">
               <span>
                 Direct {formatNumber(accumulatedPointCalculation.exposure.direct, 2)} kWh/m²
               </span>
-              <span>Diffuse 0.00 kWh/m² <em>placeholder</em></span>
+              <span>
+                Diffuse {formatNumber(accumulatedPointCalculation.exposure.diffuse, 2)} kWh/m²
+              </span>
               <span>
                 Total {formatNumber(accumulatedPointCalculation.exposure.total, 2)} kWh/m²
               </span>
             </div>
             <p className="field-note">
-              Constant {formatNumber(dni, 0)} W/m² DNI model from{' '}
-              {periodStartDate} through {periodEndDate}.
+              Synthetic clear/overcast expected value from {periodStartDate} through{' '}
+              {periodEndDate}; morning/noon/evening overcast probabilities are{' '}
+              {morningOvercastPercent}%/{noonOvercastPercent}%/{eveningOvercastPercent}%.
             </p>
           </section>
-        ) : analysisMode === 'instant' && calculation.error ? (
-          <p className="solar-error" role="alert">{calculation.error}</p>
-        ) : analysisMode === 'instant' && result ? (
+        ) : analysisMode === 'instant' && (calculation.error || instantPointCalculation.error) ? (
+          <p className="solar-error" role="alert">
+            {calculation.error ?? instantPointCalculation.error}
+          </p>
+        ) : analysisMode === 'instant' && result && instantPointCalculation.exposure ? (
           <section className="solar-results" aria-live="polite">
             <div className="solar-primary-result">
-              <strong>{formatNumber(result.directIrradianceWattsPerSquareMeter)}</strong>
-              <span>W/m² direct</span>
+              <strong>{formatNumber(instantPointCalculation.exposure.total)}</strong>
+              <span>W/m² total irradiance</span>
             </div>
             <div className="solar-channel-results">
-              <span>Direct {formatNumber(result.directIrradianceWattsPerSquareMeter)} W/m²</span>
-              <span>Diffuse 0.0 W/m² <em>placeholder</em></span>
-              <span>Total {formatNumber(result.directIrradianceWattsPerSquareMeter)} W/m²</span>
+              <span>Direct {formatNumber(instantPointCalculation.exposure.direct)} W/m²</span>
+              <span>Diffuse {formatNumber(instantPointCalculation.exposure.diffuse)} W/m²</span>
+              <span>Total {formatNumber(instantPointCalculation.exposure.total)} W/m²</span>
             </div>
             <dl>
               <div><dt>Altitude</dt><dd>{formatNumber(radiansToDegrees(result.altitudeRadians))}°</dd></div>
