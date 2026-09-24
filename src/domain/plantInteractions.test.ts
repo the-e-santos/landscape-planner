@@ -6,6 +6,7 @@ import type {
 } from './landscape'
 import {
   evaluatePlantInteractionRules,
+  getInteractionReferenceIssues,
   validatePlantInteractionRule,
   validatePlantInteractionRuleSet,
   type EvidenceSource,
@@ -14,6 +15,12 @@ import {
 import { createDefaultProject, type LandscapeProject } from './project'
 import { applyProjectCommand } from './projectCommands'
 import { deserializeProject, serializeProject } from './projectSerialization'
+import {
+  applyInteractionCatalogCommand,
+  createInteractionCatalog,
+  deserializeInteractionCatalog,
+  serializeInteractionCatalog,
+} from './interactionCatalog'
 
 const evidence: EvidenceSource = {
   id: 'source.example-study',
@@ -79,21 +86,24 @@ function createInteractionProject(
   plants: readonly PlantEntity[] = [tomato, basil],
 ): LandscapeProject {
   const entities = [bed, zone, ...plants]
-  const withTomatoGroup = applyProjectCommand(createDefaultProject(), {
-    type: 'interactionGroup.add',
-    group: { id: 'group.tomato', name: 'Tomato group' },
-  })
-  const withGroups = applyProjectCommand(withTomatoGroup, {
-    type: 'interactionGroup.add',
-    group: { id: 'group.basil', name: 'Basil group' },
-  })
   return entities.reduce(
     (project, entity) => applyProjectCommand(project, {
       type: 'landscapeSemantic.add',
       entity,
     }),
-    withGroups,
+    createDefaultProject(),
   )
+}
+
+function catalogWithRules(rules: readonly PlantInteractionRule[]) {
+  return {
+    ...createInteractionCatalog('catalog.test', 'Test catalog'),
+    groups: [
+      { id: 'group.tomato', name: 'Tomato group' },
+      { id: 'group.basil', name: 'Basil group' },
+    ],
+    rules,
+  }
 }
 
 function createRule(
@@ -118,7 +128,7 @@ describe('plant interaction rules', () => {
   it('creates one explainable recommendation for a symmetric proximity rule', () => {
     const findings = evaluatePlantInteractionRules(
       createInteractionProject(),
-      [createRule()],
+      catalogWithRules([createRule()]),
     )
 
     expect(findings).toHaveLength(1)
@@ -146,7 +156,7 @@ describe('plant interaction rules', () => {
 
     const findings = evaluatePlantInteractionRules(
       createInteractionProject(),
-      [rule],
+      catalogWithRules([rule]),
     )
 
     expect(findings).toHaveLength(1)
@@ -175,7 +185,7 @@ describe('plant interaction rules', () => {
 
     const findings = evaluatePlantInteractionRules(
       createInteractionProject([tomato, nearbyUnassignedBasil]),
-      [sharedSoilRule, sharedIrrigationRule],
+      catalogWithRules([sharedSoilRule, sharedIrrigationRule]),
     )
 
     expect(findings).toEqual([])
@@ -184,11 +194,11 @@ describe('plant interaction rules', () => {
   it('explains shared-irrigation findings separately from soil', () => {
     const findings = evaluatePlantInteractionRules(
       createInteractionProject(),
-      [createRule({
+      catalogWithRules([createRule({
         effectType: 'irrigationCompatibility',
         polarity: 'contextDependent',
         domain: { type: 'sharedIrrigationZone' },
-      })],
+      })]),
     )
 
     expect(findings[0]?.kind).toBe('notice')
@@ -212,10 +222,10 @@ describe('plant interaction rules', () => {
   it('retains applicability conditions and notes in explainable findings', () => {
     const findings = evaluatePlantInteractionRules(
       createInteractionProject(),
-      [createRule({
+      catalogWithRules([createRule({
         conditions: { season: 'summer', minimumTemperatureCelsius: 15 },
         notes: 'Confirm the local growing context.',
-      })],
+      })]),
     )
 
     expect(findings[0]?.conditions).toEqual({
@@ -227,17 +237,20 @@ describe('plant interaction rules', () => {
 
   it('evaluates persisted rules and protects referenced groups', () => {
     const project = createInteractionProject()
-    const withRule = applyProjectCommand(project, {
-      type: 'interactionRule.add',
+    const catalog = catalogWithRules([])
+    const withRule = applyInteractionCatalogCommand(catalog, {
+      type: 'rule.add',
       rule: createRule(),
     })
 
-    expect(evaluatePlantInteractionRules(withRule)).toHaveLength(1)
-    expect(deserializeProject(serializeProject(withRule))).toEqual(withRule)
-    expect(() => applyProjectCommand(withRule, {
-      type: 'interactionGroup.remove',
+    expect(evaluatePlantInteractionRules(project, withRule)).toHaveLength(1)
+    expect(deserializeProject(serializeProject(project))).toEqual(project)
+    expect(deserializeInteractionCatalog(serializeInteractionCatalog(withRule)))
+      .toEqual(withRule)
+    expect(() => applyInteractionCatalogCommand(withRule, {
+      type: 'group.remove',
       groupId: 'group.tomato',
-    })).toThrow('references missing source group')
+    })).toThrow('referenced by a rule')
   })
 
   it('supports zero or multiple explicit group memberships', () => {
@@ -247,7 +260,10 @@ describe('plant interaction rules', () => {
       type: 'landscapeSemantic.replace',
       entity: ungrouped,
     })
-    expect(evaluatePlantInteractionRules(withUngroupedPlant, [createRule()]))
+    expect(evaluatePlantInteractionRules(
+      withUngroupedPlant,
+      catalogWithRules([createRule()]),
+    ))
       .toEqual([])
 
     const multipleGroups = {
@@ -269,13 +285,23 @@ describe('plant interaction rules', () => {
     })).toThrow('must not contain duplicates')
   })
 
-  it('blocks removing a group assigned to a plant even without rules', () => {
+  it('reports a plant membership whose catalog group is unavailable', () => {
     const project = createInteractionProject()
+    const catalog = {
+      ...catalogWithRules([]),
+      groups: [{ id: 'group.basil', name: 'Basil group' }],
+    }
+    const linkedProject = {
+      ...project,
+      interactionCatalogId: catalog.id,
+    }
 
-    expect(() => applyProjectCommand(project, {
-      type: 'interactionGroup.remove',
+    expect(getInteractionReferenceIssues(linkedProject, catalog)).toContainEqual({
+      code: 'unresolvedGroup',
+      plantId: tomato.id,
       groupId: 'group.tomato',
-    })).toThrow(`Plant ${tomato.id} references missing interaction group`)
+      message: `Plant ${tomato.id} references unavailable interaction group group.tomato.`,
+    })
   })
 
   it('emits one symmetric finding for two plants in the same group', () => {
@@ -289,6 +315,9 @@ describe('plant interaction rules', () => {
       targetGroupId: 'group.tomato',
     })
 
-    expect(evaluatePlantInteractionRules(project, [sameGroupRule])).toHaveLength(1)
+    expect(evaluatePlantInteractionRules(
+      project,
+      catalogWithRules([sameGroupRule]),
+    )).toHaveLength(1)
   })
 })

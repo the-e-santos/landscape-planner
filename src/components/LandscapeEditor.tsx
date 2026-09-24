@@ -1,4 +1,4 @@
-import { useState } from 'react'
+import { useRef, useState, type ChangeEvent } from 'react'
 import type {
   IrrigationZoneEntity,
   LandscapeSemanticEntity,
@@ -17,7 +17,10 @@ import type {
   PlantInteractionFinding,
   PlantInteractionGroup,
   PlantInteractionRule,
+  PlantInteractionCatalogDocument,
+  InteractionReferenceIssue,
 } from '../domain/plantInteractions'
+import { serializeInteractionCatalog } from '../domain/interactionCatalog'
 
 export type LandscapeCreationKind = 'plantingBed' | 'irrigationZone' | 'plant'
 
@@ -25,9 +28,11 @@ interface LandscapeEditorProps {
   readonly plantingBeds: readonly PlantingBedEntity[]
   readonly irrigationZones: readonly IrrigationZoneEntity[]
   readonly plants: readonly PlantEntity[]
-  readonly interactionGroups: readonly PlantInteractionGroup[]
-  readonly interactionRules: readonly PlantInteractionRule[]
+  readonly interactionCatalog: PlantInteractionCatalogDocument | null
   readonly interactionFindings: readonly PlantInteractionFinding[]
+  readonly interactionReferenceIssues: readonly InteractionReferenceIssue[]
+  readonly catalogStatus: string
+  readonly catalogError: string | null
   readonly selectedEntityId: string | null
   readonly unit: DisplayUnit
   readonly canUndo: boolean
@@ -36,6 +41,10 @@ interface LandscapeEditorProps {
   readonly onSelect: (entityId: string | null) => void
   readonly onReplace: (entity: LandscapeSemanticEntity) => void
   readonly onRemove: (entityId: string) => void
+  readonly onNewCatalog: () => void
+  readonly onLoadCatalog: (file: File) => void
+  readonly onDetachCatalog: () => void
+  readonly onCatalogNameChange: (name: string) => void
   readonly onAddGroup: () => void
   readonly onReplaceGroup: (group: PlantInteractionGroup) => void
   readonly onRemoveGroup: (groupId: string) => void
@@ -610,9 +619,11 @@ export function LandscapeEditor({
   plantingBeds,
   irrigationZones,
   plants,
-  interactionGroups,
-  interactionRules,
+  interactionCatalog,
   interactionFindings,
+  interactionReferenceIssues,
+  catalogStatus,
+  catalogError,
   selectedEntityId,
   unit,
   canUndo,
@@ -621,6 +632,10 @@ export function LandscapeEditor({
   onSelect,
   onReplace,
   onRemove,
+  onNewCatalog,
+  onLoadCatalog,
+  onDetachCatalog,
+  onCatalogNameChange,
   onAddGroup,
   onReplaceGroup,
   onRemoveGroup,
@@ -633,6 +648,7 @@ export function LandscapeEditor({
 }: LandscapeEditorProps) {
   const [isCollapsed, setIsCollapsed] = useState(false)
   const [validationMessage, setValidationMessage] = useState<string | null>(null)
+  const catalogInputRef = useRef<HTMLInputElement>(null)
   const { panelRef, dragHandleProps } = useDraggablePanel<HTMLElement>()
   const entities: readonly LandscapeSemanticEntity[] = [
     ...plantingBeds,
@@ -640,6 +656,8 @@ export function LandscapeEditor({
     ...plants,
   ]
   const selected = entities.find(({ id }) => id === selectedEntityId)
+  const interactionGroups = interactionCatalog?.groups ?? []
+  const interactionRules = interactionCatalog?.rules ?? []
   const replace = (entity: LandscapeSemanticEntity) => {
     try {
       onReplace(entity)
@@ -780,18 +798,81 @@ export function LandscapeEditor({
             Create an entity or select one above to edit its properties.
           </p>
         )}
-        <InteractionCatalogEditor
-          groups={interactionGroups}
-          rules={interactionRules}
-          plants={plants}
-          findings={interactionFindings}
-          onAddGroup={onAddGroup}
-          onReplaceGroup={onReplaceGroup}
-          onRemoveGroup={onRemoveGroup}
-          onAddRule={onAddRule}
-          onReplaceRule={onReplaceRule}
-          onRemoveRule={onRemoveRule}
-        />
+        <section className="catalog-file-controls" aria-label="Interaction catalog file">
+          <div className="section-heading"><h2>Relationship catalog</h2></div>
+          {interactionCatalog ? (
+            <>
+              <TextField
+                id="interaction-catalog-name"
+                label="Catalog name"
+                value={interactionCatalog.name}
+                onCommit={(name) => { if (name) onCatalogNameChange(name) }}
+              />
+              <code>{interactionCatalog.id}</code>
+            </>
+          ) : null}
+          <div className="catalog-file-actions">
+            <button type="button" onClick={onNewCatalog}>New catalog</button>
+            <button type="button" onClick={() => catalogInputRef.current?.click()}>
+              Load catalog
+            </button>
+            <input
+              ref={catalogInputRef}
+              className="visually-hidden"
+              type="file"
+              accept=".json,application/json"
+              onChange={(event: ChangeEvent<HTMLInputElement>) => {
+                const file = event.currentTarget.files?.[0]
+                if (file) onLoadCatalog(file)
+                event.currentTarget.value = ''
+              }}
+            />
+            <button
+              type="button"
+              disabled={!interactionCatalog}
+              onClick={() => {
+                if (!interactionCatalog) return
+                const blob = new Blob(
+                  [serializeInteractionCatalog(interactionCatalog)],
+                  { type: 'application/json' },
+                )
+                const url = URL.createObjectURL(blob)
+                const anchor = document.createElement('a')
+                anchor.href = url
+                anchor.download = `${interactionCatalog.name.toLowerCase().replace(/[^a-z0-9]+/g, '-') || 'plant-relationships'}.json`
+                anchor.click()
+                URL.revokeObjectURL(url)
+              }}
+            >
+              Download catalog
+            </button>
+            <button type="button" disabled={!interactionCatalog} onClick={onDetachCatalog}>
+              Detach
+            </button>
+          </div>
+          <p className={catalogError ? 'persistence-message error' : 'field-note'}>
+            {catalogError ?? catalogStatus}
+          </p>
+          {interactionReferenceIssues.map((issue, index) => (
+            <p className="catalog-reference-issue" key={`${issue.code}:${issue.plantId ?? ''}:${issue.groupId ?? ''}:${index}`}>
+              {issue.message}
+            </p>
+          ))}
+        </section>
+        {interactionCatalog ? (
+          <InteractionCatalogEditor
+            groups={interactionGroups}
+            rules={interactionRules}
+            plants={plants}
+            findings={interactionFindings}
+            onAddGroup={onAddGroup}
+            onReplaceGroup={onReplaceGroup}
+            onRemoveGroup={onRemoveGroup}
+            onAddRule={onAddRule}
+            onReplaceRule={onReplaceRule}
+            onRemoveRule={onRemoveRule}
+          />
+        ) : null}
       </div>
     </aside>
   )

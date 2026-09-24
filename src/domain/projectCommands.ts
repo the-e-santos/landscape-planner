@@ -7,13 +7,6 @@ import {
   type LandscapeSemanticEntity,
 } from './landscape'
 import {
-  validatePlantInteractionCatalog,
-  validatePlantInteractionGroup,
-  validatePlantInteractionRule,
-  type PlantInteractionGroup,
-  type PlantInteractionRule,
-} from './plantInteractions'
-import {
   clonePrimitiveEntity,
   validatePrimitiveEntity,
   type PrimitiveEntity,
@@ -62,28 +55,8 @@ export type ProjectCommand =
       readonly entityId: EntityId
     }
   | {
-      readonly type: 'interactionGroup.add'
-      readonly group: PlantInteractionGroup
-    }
-  | {
-      readonly type: 'interactionGroup.replace'
-      readonly group: PlantInteractionGroup
-    }
-  | {
-      readonly type: 'interactionGroup.remove'
-      readonly groupId: string
-    }
-  | {
-      readonly type: 'interactionRule.add'
-      readonly rule: PlantInteractionRule
-    }
-  | {
-      readonly type: 'interactionRule.replace'
-      readonly rule: PlantInteractionRule
-    }
-  | {
-      readonly type: 'interactionRule.remove'
-      readonly ruleId: string
+      readonly type: 'project.interactionCatalog.set'
+      readonly catalogId?: string
     }
   | {
       readonly type: 'terrain.spotElevation.add'
@@ -199,17 +172,7 @@ function replaceEntity(
 
 function validateLandscapeResult(project: LandscapeProject): LandscapeProject {
   validateLandscapeMemberships(project)
-  validatePlantInteractionCatalog(project)
   return project
-}
-
-function cloneInteractionRule(rule: PlantInteractionRule): PlantInteractionRule {
-  return {
-    ...rule,
-    domain: { ...rule.domain },
-    ...(rule.conditions ? { conditions: { ...rule.conditions } } : {}),
-    sources: rule.sources.map((source) => ({ ...source })),
-  }
 }
 
 export function applyProjectCommand(
@@ -341,92 +304,17 @@ export function applyProjectCommand(
       })
     }
 
-    case 'interactionGroup.add': {
-      validatePlantInteractionGroup(command.group)
-      if (project.interactionCatalog.groups.some(({ id }) => id === command.group.id)) {
-        throw new Error(`Interaction group already exists: ${command.group.id}`)
+    case 'project.interactionCatalog.set':
+      if (command.catalogId !== undefined && command.catalogId.trim().length === 0) {
+        throw new Error('Interaction catalog ID must not be empty')
       }
-      return validateLandscapeResult({
-        ...project,
-        interactionCatalog: {
-          ...project.interactionCatalog,
-          groups: [...project.interactionCatalog.groups, { ...command.group }],
-        },
-      })
-    }
-
-    case 'interactionGroup.replace': {
-      validatePlantInteractionGroup(command.group)
-      let found = false
-      const groups = project.interactionCatalog.groups.map((group) => {
-        if (group.id !== command.group.id) return group
-        found = true
-        return { ...command.group }
-      })
-      if (!found) throw new Error(`Interaction group not found: ${command.group.id}`)
-      return validateLandscapeResult({
-        ...project,
-        interactionCatalog: { ...project.interactionCatalog, groups },
-      })
-    }
-
-    case 'interactionGroup.remove': {
-      const groups = project.interactionCatalog.groups.filter(
-        ({ id }) => id !== command.groupId,
-      )
-      if (groups.length === project.interactionCatalog.groups.length) {
-        throw new Error(`Interaction group not found: ${command.groupId}`)
+      if (command.catalogId) {
+        return { ...project, interactionCatalogId: command.catalogId }
       }
-      return validateLandscapeResult({
-        ...project,
-        interactionCatalog: { ...project.interactionCatalog, groups },
-      })
-    }
-
-    case 'interactionRule.add': {
-      validatePlantInteractionRule(command.rule)
-      if (project.interactionCatalog.rules.some(({ id }) => id === command.rule.id)) {
-        throw new Error(`Interaction rule already exists: ${command.rule.id}`)
+      {
+        const { interactionCatalogId: _removed, ...withoutCatalog } = project
+        return withoutCatalog
       }
-      return validateLandscapeResult({
-        ...project,
-        interactionCatalog: {
-          ...project.interactionCatalog,
-          rules: [
-            ...project.interactionCatalog.rules,
-            cloneInteractionRule(command.rule),
-          ],
-        },
-      })
-    }
-
-    case 'interactionRule.replace': {
-      validatePlantInteractionRule(command.rule)
-      let found = false
-      const rules = project.interactionCatalog.rules.map((rule) => {
-        if (rule.id !== command.rule.id) return rule
-        found = true
-        return cloneInteractionRule(command.rule)
-      })
-      if (!found) throw new Error(`Interaction rule not found: ${command.rule.id}`)
-      return validateLandscapeResult({
-        ...project,
-        interactionCatalog: { ...project.interactionCatalog, rules },
-      })
-    }
-
-    case 'interactionRule.remove': {
-      const rules = project.interactionCatalog.rules.filter(
-        ({ id }) => id !== command.ruleId,
-      )
-      if (rules.length === project.interactionCatalog.rules.length) {
-        throw new Error(`Interaction rule not found: ${command.ruleId}`)
-      }
-      return validateLandscapeResult({
-        ...project,
-        interactionCatalog: { ...project.interactionCatalog, rules },
-      })
-    }
 
     case 'terrain.spotElevation.add':
       return updateTerrain(project, command.terrainEntityId, (terrain) => {

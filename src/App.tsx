@@ -54,9 +54,17 @@ import type {
 } from './domain/landscape'
 import {
   evaluatePlantInteractionRules,
+  getInteractionReferenceIssues,
+  type PlantInteractionCatalogDocument,
   type PlantInteractionGroup,
   type PlantInteractionRule,
 } from './domain/plantInteractions'
+import {
+  applyInteractionCatalogCommand,
+  createInteractionCatalog,
+  deserializeInteractionCatalog,
+  type InteractionCatalogCommand,
+} from './domain/interactionCatalog'
 import type {
   SolarCalculationProgress,
   SolarHeatmapSettings,
@@ -67,6 +75,10 @@ import {
   loadProjectAutosave,
   saveProjectAutosave,
 } from './persistence/projectAutosave'
+import {
+  loadCatalogAutosave,
+  saveCatalogAutosave,
+} from './persistence/catalogAutosave'
 import {
   createYardScene,
   type PrimitiveManipulationMode,
@@ -494,6 +506,10 @@ function App() {
     'Checking local recovery…',
   )
   const [persistenceError, setPersistenceError] = useState<string | null>(null)
+  const [interactionCatalog, setInteractionCatalog] =
+    useState<PlantInteractionCatalogDocument | null>(null)
+  const [catalogStatus, setCatalogStatus] = useState('No catalog attached.')
+  const [catalogError, setCatalogError] = useState<string | null>(null)
   const [rectangle, setRectangle] = useState({
     eastWestMeters: 30,
     northSouthMeters: 40,
@@ -541,9 +557,19 @@ function App() {
     ),
     [landscapeEntities],
   )
+  const resolvedInteractionCatalog =
+    interactionCatalog?.id === project.interactionCatalogId
+      ? interactionCatalog
+      : null
   const interactionFindings = useMemo(
-    () => evaluatePlantInteractionRules(project),
-    [project],
+    () => resolvedInteractionCatalog
+      ? evaluatePlantInteractionRules(project, resolvedInteractionCatalog)
+      : [],
+    [project, resolvedInteractionCatalog],
+  )
+  const interactionReferenceIssues = useMemo(
+    () => getInteractionReferenceIssues(project, resolvedInteractionCatalog),
+    [project, resolvedInteractionCatalog],
   )
   const activeSelectedLandscapeEntityId = landscapeEntities.some(
     ({ id }) => id === selectedLandscapeEntityId,
@@ -615,6 +641,55 @@ function App() {
     }, 750)
     return () => window.clearTimeout(timer)
   }, [autosaveEnabled, project])
+
+  useEffect(() => {
+    const catalogId = project.interactionCatalogId
+    if (!catalogId) return
+    if (interactionCatalog?.id === catalogId) return
+    let active = true
+    loadCatalogAutosave(catalogId)
+      .then((record) => {
+        if (!active) return
+        if (!record) {
+          setInteractionCatalog(null)
+          setCatalogStatus(`Catalog ${catalogId} is unavailable. Memberships are retained.`)
+          return
+        }
+        const catalog = deserializeInteractionCatalog(record.json)
+        setInteractionCatalog(catalog)
+        setCatalogError(null)
+        setCatalogStatus(`Loaded local catalog ${catalog.name}.`)
+      })
+      .catch((error: unknown) => {
+        if (!active) return
+        setCatalogError(
+          `Catalog recovery failed: ${error instanceof Error ? error.message : 'unknown error'}`,
+        )
+      })
+    return () => { active = false }
+  }, [interactionCatalog?.id, project.interactionCatalogId])
+
+  useEffect(() => {
+    if (!interactionCatalog) return
+    const timer = window.setTimeout(() => {
+      saveCatalogAutosave(interactionCatalog)
+        .then(() => {
+          setCatalogError(null)
+          setCatalogStatus(`Catalog autosaved at ${new Date().toLocaleTimeString()}.`)
+        })
+        .catch((error: unknown) => setCatalogError(
+          `Catalog autosave failed: ${error instanceof Error ? error.message : 'unknown error'}`,
+        ))
+    }, 750)
+    return () => window.clearTimeout(timer)
+  }, [interactionCatalog])
+
+  const dispatchCatalog = (command: InteractionCatalogCommand) => {
+    setInteractionCatalog((catalog) => {
+      if (!catalog) throw new Error('No interaction catalog is loaded')
+      return applyInteractionCatalogCommand(catalog, command)
+    })
+  }
 
   const rectangleVertices = useMemo(
     () =>
@@ -770,6 +845,12 @@ function App() {
           file.text()
             .then((json) => {
               const loadedProject = deserializeProject(json)
+              setInteractionCatalog(null)
+              setCatalogStatus(
+                loadedProject.interactionCatalogId
+                  ? `Looking for catalog ${loadedProject.interactionCatalogId} locally…`
+                  : 'No catalog attached. Create or load one to enable guidance.',
+              )
               projectStore.replaceProject(loadedProject)
               setMode('polygon')
               setSelectedEntityId(null)
@@ -786,6 +867,12 @@ function App() {
         onRestore={() => {
           if (!recoveryProject) return
           projectStore.replaceProject(recoveryProject.project)
+          setInteractionCatalog(null)
+          setCatalogStatus(
+            recoveryProject.project.interactionCatalogId
+              ? `Looking for catalog ${recoveryProject.project.interactionCatalogId} locally…`
+              : 'No catalog attached. Create or load one to enable guidance.',
+          )
           setMode('polygon')
           setSelectedEntityId(null)
           setSelectedLandscapeEntityId(null)
@@ -977,9 +1064,11 @@ function App() {
           plantingBeds={plantingBeds}
           irrigationZones={irrigationZones}
           plants={plants}
-          interactionGroups={project.interactionCatalog.groups}
-          interactionRules={project.interactionCatalog.rules}
+          interactionCatalog={resolvedInteractionCatalog}
           interactionFindings={interactionFindings}
+          interactionReferenceIssues={interactionReferenceIssues}
+          catalogStatus={catalogStatus}
+          catalogError={catalogError}
           selectedEntityId={activeSelectedLandscapeEntityId}
           unit={unit}
           canUndo={projectStore.canUndo()}
@@ -1008,33 +1097,73 @@ function App() {
             })
             setSelectedLandscapeEntityId(null)
           }}
-          onAddGroup={() => projectStore.dispatch({
-            type: 'interactionGroup.add',
-            group: createUserInteractionGroup(project.interactionCatalog.groups),
+          onNewCatalog={() => {
+            const catalog = createInteractionCatalog(
+              `interaction-catalog.${crypto.randomUUID()}`,
+            )
+            setInteractionCatalog(catalog)
+            projectStore.dispatch({
+              type: 'project.interactionCatalog.set',
+              catalogId: catalog.id,
+            })
+            setCatalogError(null)
+            setCatalogStatus(`Created ${catalog.name}.`)
+          }}
+          onLoadCatalog={(file) => file.text()
+            .then((json) => {
+              const catalog = deserializeInteractionCatalog(json)
+              setInteractionCatalog(catalog)
+              projectStore.dispatch({
+                type: 'project.interactionCatalog.set',
+                catalogId: catalog.id,
+              })
+              setCatalogError(null)
+              setCatalogStatus(`Loaded ${file.name}.`)
+            })
+            .catch((error: unknown) => setCatalogError(
+              `Could not load ${file.name}: ${error instanceof Error ? error.message : 'unknown error'}`,
+            ))}
+          onDetachCatalog={() => {
+            setInteractionCatalog(null)
+            projectStore.dispatch({ type: 'project.interactionCatalog.set' })
+            setCatalogError(null)
+            setCatalogStatus('Catalog detached. Plant memberships were retained.')
+          }}
+          onCatalogNameChange={(name) => dispatchCatalog({
+            type: 'catalog.name.set',
+            name,
           })}
-          onReplaceGroup={(group) => projectStore.dispatch({
-            type: 'interactionGroup.replace',
+          onAddGroup={() => {
+            if (!resolvedInteractionCatalog) return
+            dispatchCatalog({
+              type: 'group.add',
+              group: createUserInteractionGroup(resolvedInteractionCatalog.groups),
+            })
+          }}
+          onReplaceGroup={(group) => dispatchCatalog({
+            type: 'group.replace',
             group,
           })}
-          onRemoveGroup={(groupId) => projectStore.dispatch({
-            type: 'interactionGroup.remove',
+          onRemoveGroup={(groupId) => dispatchCatalog({
+            type: 'group.remove',
             groupId,
           })}
           onAddRule={() => {
+            if (!resolvedInteractionCatalog) return undefined
             const rule = createUserInteractionRule(
-              project.interactionCatalog.groups,
-              project.interactionCatalog.rules,
+              resolvedInteractionCatalog.groups,
+              resolvedInteractionCatalog.rules,
             )
             if (!rule) return undefined
-            projectStore.dispatch({ type: 'interactionRule.add', rule })
+            dispatchCatalog({ type: 'rule.add', rule })
             return rule.id
           }}
-          onReplaceRule={(rule) => projectStore.dispatch({
-            type: 'interactionRule.replace',
+          onReplaceRule={(rule) => dispatchCatalog({
+            type: 'rule.replace',
             rule,
           })}
-          onRemoveRule={(ruleId) => projectStore.dispatch({
-            type: 'interactionRule.remove',
+          onRemoveRule={(ruleId) => dispatchCatalog({
+            type: 'rule.remove',
             ruleId,
           })}
           onUndo={projectStore.undo}

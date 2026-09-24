@@ -93,7 +93,7 @@ describe('project model', () => {
 
   it('rejects JSON with an unsupported schema version', () => {
     expect(() =>
-      deserializeProject(JSON.stringify({ schemaVersion: 4 })),
+      deserializeProject(JSON.stringify({ schemaVersion: 5 })),
     ).toThrow('Unsupported project schema version')
   })
 
@@ -103,11 +103,11 @@ describe('project model', () => {
     expect(() => deserializeProject(JSON.stringify({
       ...current,
       schemaVersion: 1,
-    }))).toThrow('supports only version 3')
+    }))).toThrow('supports only version 4')
     expect(() => deserializeProject(JSON.stringify({
       ...current,
       schemaVersion: 2,
-    }))).toThrow('supports only version 3')
+    }))).toThrow('supports only version 4')
   })
 
   it('reports the path to invalid project data', () => {
@@ -207,6 +207,25 @@ describe('project model', () => {
     expect(getParcelEntity(original, DEFAULT_PARCEL_ID).geometry).not.toEqual(
       geometry,
     )
+  })
+
+  it('stores only a catalog reference in site JSON and can detach it', () => {
+    const original = createDefaultProject()
+    const linked = applyProjectCommand(original, {
+      type: 'project.interactionCatalog.set',
+      catalogId: 'catalog.shared',
+    })
+    const json = serializeProject(linked)
+
+    expect(JSON.parse(json)).toMatchObject({ interactionCatalogId: 'catalog.shared' })
+    expect(json).not.toContain('"groups"')
+    expect(json).not.toContain('"rules"')
+    expect(deserializeProject(json)).toEqual(linked)
+
+    const detached = applyProjectCommand(linked, {
+      type: 'project.interactionCatalog.set',
+    })
+    expect(detached.interactionCatalogId).toBeUndefined()
   })
 
   it('adds, replaces, and removes a spot elevation by stable ID', () => {

@@ -64,7 +64,12 @@ export interface PlantInteractionRule {
   readonly notes?: string
 }
 
-export interface PlantInteractionCatalog {
+export const INTERACTION_CATALOG_SCHEMA_VERSION = 1 as const
+
+export interface PlantInteractionCatalogDocument {
+  readonly schemaVersion: typeof INTERACTION_CATALOG_SCHEMA_VERSION
+  readonly id: string
+  readonly name: string
   readonly groups: readonly PlantInteractionGroup[]
   readonly rules: readonly PlantInteractionRule[]
 }
@@ -182,9 +187,11 @@ export function validatePlantInteractionRuleSet(
 }
 
 export function validatePlantInteractionCatalog(
-  project: LandscapeProject,
+  catalog: PlantInteractionCatalogDocument,
 ): void {
-  const { groups, rules } = project.interactionCatalog
+  requireText(catalog.id, 'Plant interaction catalog ID')
+  requireText(catalog.name, 'Plant interaction catalog name')
+  const { groups, rules } = catalog
   groups.forEach(validatePlantInteractionGroup)
   validatePlantInteractionRuleSet(rules)
   const groupIds = new Set(groups.map(({ id }) => id))
@@ -199,14 +206,46 @@ export function validatePlantInteractionCatalog(
       throw new Error(`Rule ${rule.id} references missing target group ${rule.targetGroupId}`)
     }
   })
-  project.entities.forEach((entity) => {
-    if (entity.kind !== 'plant') return
-    entity.interactionGroupIds.forEach((groupId) => {
-      if (!groupIds.has(groupId)) {
-        throw new Error(`Plant ${entity.id} references missing interaction group ${groupId}`)
-      }
-    })
-  })
+}
+
+export interface InteractionReferenceIssue {
+  readonly code: 'catalogUnavailable' | 'unresolvedGroup'
+  readonly message: string
+  readonly plantId?: string
+  readonly groupId?: string
+}
+
+export function getInteractionReferenceIssues(
+  project: LandscapeProject,
+  catalog: PlantInteractionCatalogDocument | null,
+): readonly InteractionReferenceIssue[] {
+  const membershipPlants = project.entities.filter(
+    (entity): entity is PlantEntity =>
+      entity.kind === 'plant' && entity.interactionGroupIds.length > 0,
+  )
+  if (!project.interactionCatalogId) {
+    return membershipPlants.length === 0 ? [] : [{
+      code: 'catalogUnavailable',
+      message: 'The site has interaction-group memberships but no catalog reference.',
+    }]
+  }
+  if (!catalog || catalog.id !== project.interactionCatalogId) {
+    return [{
+      code: 'catalogUnavailable',
+      message: `Interaction catalog ${project.interactionCatalogId} is unavailable; memberships are retained and guidance is paused.`,
+    }]
+  }
+  const groupIds = new Set(catalog.groups.map(({ id }) => id))
+  return membershipPlants.flatMap((plant) =>
+    plant.interactionGroupIds
+      .filter((groupId) => !groupIds.has(groupId))
+      .map((groupId) => ({
+        code: 'unresolvedGroup' as const,
+        plantId: plant.id,
+        groupId,
+        message: `Plant ${plant.id} references unavailable interaction group ${groupId}.`,
+      })),
+  )
 }
 
 interface DomainMatch {
@@ -318,8 +357,10 @@ function groupsMatch(
  */
 export function evaluatePlantInteractionRules(
   project: LandscapeProject,
-  rules: readonly PlantInteractionRule[] = project.interactionCatalog.rules,
+  catalog: PlantInteractionCatalogDocument,
 ): readonly PlantInteractionFinding[] {
+  validatePlantInteractionCatalog(catalog)
+  const rules = catalog.rules
   validatePlantInteractionRuleSet(rules)
   const plants = project.entities.filter(
     (entity): entity is PlantEntity => entity.kind === 'plant',

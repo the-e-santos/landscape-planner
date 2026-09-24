@@ -12,9 +12,8 @@ import type {
   PlantEntity,
   PlantingBedEntity,
 } from './landscape'
-import type { PlantInteractionCatalog } from './plantInteractions'
 
-export const PROJECT_SCHEMA_VERSION = 3 as const
+export const PROJECT_SCHEMA_VERSION = 4 as const
 
 export type ProjectId = string
 export type EntityId = string
@@ -45,7 +44,8 @@ export interface LandscapeProject {
   readonly name: string
   readonly coordinates: ProjectCoordinates
   readonly entities: readonly ProjectEntity[]
-  readonly interactionCatalog: PlantInteractionCatalog
+  /** Optional reference to a separately stored reusable interaction catalog. */
+  readonly interactionCatalogId?: string
 }
 
 export const DEFAULT_PROJECT_ID = 'project.default'
@@ -89,7 +89,6 @@ export function createDefaultProject(): LandscapeProject {
     coordinates: {
       northRotationRadians: 0,
     },
-    interactionCatalog: { groups: [], rules: [] },
     entities: [
       {
         id: DEFAULT_PARCEL_ID,

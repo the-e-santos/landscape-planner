@@ -2,7 +2,8 @@
 
 ## Status
 
-Accepted during Milestone 11.
+Superseded by decision 0020. Group-based user authorship remains accepted; catalog
+storage moved out of the site project.
 
 ## Context
 

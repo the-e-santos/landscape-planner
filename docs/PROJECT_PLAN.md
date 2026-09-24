@@ -96,9 +96,9 @@ The solar system contains independently testable layers:
 
 ### 3.4 Plant and bed rules
 
-The horticultural engine evaluates explicit rules against spatial and membership
-relationships derived from the project model. It does not depend on Three.js mesh
-types or visual overlap.
+The horticultural engine evaluates explicit rules from a separately versioned,
+reusable interaction catalog against spatial and membership relationships derived
+from the site project. It does not depend on Three.js mesh types or visual overlap.
 
 ### 3.5 Persistence
 

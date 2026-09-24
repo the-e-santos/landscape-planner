@@ -560,6 +560,45 @@
   border-top: 2px solid #cbd7cc;
 }
 
+.catalog-file-controls {
+  margin-top: 18px;
+  padding-top: 16px;
+  border-top: 2px solid #cbd7cc;
+}
+
+.catalog-file-controls h2 {
+  margin: 0;
+  font-size: 0.88rem;
+}
+
+.catalog-file-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  margin-top: 10px;
+}
+
+.catalog-file-actions button {
+  padding: 6px 8px;
+  border: 1px solid #c5cec5;
+  border-radius: 7px;
+  color: #315f3f;
+  background: #fff;
+  font-size: 0.7rem;
+  font-weight: 700;
+}
+
+.catalog-reference-issue {
+  margin: 7px 0 0;
+  padding: 8px;
+  border-left: 3px solid #b18a3f;
+  border-radius: 5px;
+  color: #665225;
+  background: #fff8e7;
+  font-size: 0.72rem;
+  line-height: 1.4;
+}
+
 .interaction-catalog h2 {
   margin: 0;
   font-size: 0.88rem;
