@@ -19,30 +19,6 @@ import {
 } from './plantInteractions'
 
 type JsonRecord = Record<string, unknown>
-type ProjectMigration = (project: JsonRecord) => JsonRecord
-
-/** A migration at key N converts schema N to N + 1. */
-const PROJECT_MIGRATIONS: Readonly<Partial<Record<number, ProjectMigration>>> = {
-  1: (project) => ({ ...project, schemaVersion: 2 }),
-  2: (project) => ({
-    ...project,
-    schemaVersion: 3,
-    entities: Array.isArray(project.entities)
-      ? project.entities.map((entity) => {
-          if (
-            typeof entity === 'object' &&
-            entity !== null &&
-            !Array.isArray(entity) &&
-            entity.kind === 'plant'
-          ) {
-            return { ...entity, interactionGroupIds: [] }
-          }
-          return entity
-        })
-      : project.entities,
-    interactionCatalog: { groups: [], rules: [] },
-  }),
-}
 
 export class ProjectValidationError extends Error {
   constructor(message: string) {
@@ -421,38 +397,19 @@ function validateInteractionCatalog(value: unknown, path: string): void {
   })
 }
 
-export function migrateProjectData(value: unknown): JsonRecord {
-  let project = record(value, 'project')
-  const version = project.schemaVersion
-  if (typeof version !== 'number' || !Number.isInteger(version)) {
-    return fail('project.schemaVersion', 'expected an integer schema version')
-  }
-  if (version > PROJECT_SCHEMA_VERSION) {
-    return fail(
-      'project.schemaVersion',
-      `Unsupported project schema version ${version}; this app supports through version ${PROJECT_SCHEMA_VERSION}`,
-    )
-  }
-
-  let currentVersion = version
-  while (currentVersion < PROJECT_SCHEMA_VERSION) {
-    const migration = PROJECT_MIGRATIONS[currentVersion]
-    if (!migration) {
-      return fail(
-        'project.schemaVersion',
-        `Unsupported project schema version ${currentVersion}; no migration is available`,
-      )
-    }
-    project = migration(project)
-    currentVersion += 1
-  }
-  return project
-}
-
 export function validateProjectData(value: unknown): LandscapeProject {
   const project = record(value, 'project')
+  if (
+    typeof project.schemaVersion !== 'number' ||
+    !Number.isInteger(project.schemaVersion)
+  ) {
+    return fail('project.schemaVersion', 'expected an integer schema version')
+  }
   if (project.schemaVersion !== PROJECT_SCHEMA_VERSION) {
-    return fail('project.schemaVersion', `expected migrated schema version ${PROJECT_SCHEMA_VERSION}`)
+    return fail(
+      'project.schemaVersion',
+      `Unsupported project schema version ${project.schemaVersion}; this app supports only version ${PROJECT_SCHEMA_VERSION}`,
+    )
   }
   string(project.id, 'project.id')
   string(project.name, 'project.name')
@@ -548,5 +505,5 @@ export function deserializeProject(json: string): LandscapeProject {
     const detail = error instanceof Error ? error.message : 'unknown parsing error'
     throw new ProjectValidationError(`Project JSON is not valid JSON: ${detail}`)
   }
-  return validateProjectData(migrateProjectData(parsed))
+  return validateProjectData(parsed)
 }

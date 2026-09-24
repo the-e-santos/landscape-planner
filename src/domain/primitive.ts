@@ -87,7 +87,7 @@ export interface PrimitiveEntity {
   readonly name: string
   readonly transform: ObjectTransform
   readonly geometry: PrimitiveGeometry
-  /** Missing on early schema-v1 primitives and treated as opaque. */
+  /** Omitted optics use the domain's opaque default. */
   readonly solarOptics?: SolarOptics
 }
 

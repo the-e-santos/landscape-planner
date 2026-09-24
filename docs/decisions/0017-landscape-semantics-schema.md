@@ -27,8 +27,7 @@ serializable domain data rather than Three.js scene objects.
 - Foliage proximity is calculated from canopy extents and does not imply either
   shared soil or shared irrigation.
 - Commands and project deserialization reject dangling bed or irrigation
-  references. Schema version 1 projects migrate to version 2 without entity
-  changes.
+  references. Historical migration support was later removed before release.
 
 ## Consequences
 

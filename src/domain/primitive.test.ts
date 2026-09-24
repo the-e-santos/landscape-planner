@@ -118,7 +118,7 @@ describe('primitive domain model', () => {
     }
   })
 
-  it('defaults early schema-v1 primitives without solar optics to opaque', () => {
+  it('defaults primitives without explicit solar optics to opaque', () => {
     const primitive = createPrimitive(validGeometries[0])
 
     expect(getPrimitiveSolarOptics(primitive)).toEqual({ mode: 'opaque' })

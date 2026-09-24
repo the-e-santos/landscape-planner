@@ -63,9 +63,9 @@ export interface TerrainEntity {
   readonly name: string
   /** Authoritative inputs; a triangulated surface is derived and not persisted. */
   readonly spotElevations: readonly SpotElevation[]
-  /** Missing on early schema-v1 files and treated as an empty collection. */
+  /** Optional when no linear constraints are defined. */
   readonly linearConstraints?: readonly TerrainLinearConstraint[]
-  /** Missing on early schema-v1 files and treated as an empty collection. */
+  /** Optional when no retaining walls are defined. */
   readonly retainingWalls?: readonly TerrainRetainingWall[]
 }
 

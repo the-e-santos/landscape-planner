@@ -104,8 +104,9 @@ types or visual overlap.
 
 Use versioned JSON as the canonical interchange format. Local autosave can later
 use IndexedDB or OPFS, but the in-memory model should not depend on a particular
-storage API. Include schema versioning and migrations before users accumulate
-valuable project files.
+storage API. During pre-release development, accept only the current schema and
+fail clearly for other versions. Add and retain migrations before users accumulate
+valuable project files or compatibility is otherwise promised.
 
 ## 4. Coordinate and unit conventions
 
@@ -559,7 +560,7 @@ Deliver:
 
 - download/upload project JSON first
 - schema validation with useful errors
-- schema version and migration seam
+- schema version and explicit current-version validation
 - local autosave/recovery later in this milestone
 
 ### Milestone 7 — CPU point solar reference

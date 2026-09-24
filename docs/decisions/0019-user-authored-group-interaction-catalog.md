@@ -37,6 +37,7 @@ Users carry responsibility for the claims they enter, while the application
 provides validation, explicit provenance, relationship matching, and transparent
 explanations.
 
-Schema version 2 projects migrate with an empty catalog and empty group membership
-for every plant. Catalog import/export and shared reusable libraries may be added
-later without changing the rule semantics.
+Only schema version 3 is currently supported; pre-release migration paths were
+removed because no historical project compatibility is required. Catalog
+import/export and shared reusable libraries may be added later without changing
+the rule semantics.
