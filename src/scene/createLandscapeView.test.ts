@@ -110,6 +110,7 @@ describe('landscape scene views', () => {
       position: { eastMeters: 2, elevationMeters: 1.5, northMeters: 3 },
       canopyRadiusMeters: 0.75,
       irrigationZoneIds: [],
+      interactionGroupIds: [],
     }
     const view = createPlantView(plant)
 

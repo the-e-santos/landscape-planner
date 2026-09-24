@@ -52,6 +52,11 @@ import type {
   PlantEntity,
   PlantingBedEntity,
 } from './domain/landscape'
+import {
+  evaluatePlantInteractionRules,
+  type PlantInteractionGroup,
+  type PlantInteractionRule,
+} from './domain/plantInteractions'
 import type {
   SolarCalculationProgress,
   SolarHeatmapSettings,
@@ -388,8 +393,57 @@ function createUserLandscapeEntity(
         },
         canopyRadiusMeters: 0.75,
         irrigationZoneIds: [],
+        interactionGroupIds: [],
       }
     }
+  }
+}
+
+function nextCatalogId(prefix: string, usedIds: ReadonlySet<string>): string {
+  let sequence = 1
+  let id = `${prefix}.user-${sequence}`
+  while (usedIds.has(id)) {
+    sequence += 1
+    id = `${prefix}.user-${sequence}`
+  }
+  return id
+}
+
+function createUserInteractionGroup(
+  groups: readonly PlantInteractionGroup[],
+): PlantInteractionGroup {
+  const id = nextCatalogId(
+    'interaction-group',
+    new Set(groups.map((group) => group.id)),
+  )
+  return { id, name: `Group ${groups.length + 1}` }
+}
+
+function createUserInteractionRule(
+  groups: readonly PlantInteractionGroup[],
+  rules: readonly PlantInteractionRule[],
+): PlantInteractionRule | undefined {
+  const group = groups[0]
+  if (!group) return undefined
+  const id = nextCatalogId(
+    'interaction-rule',
+    new Set(rules.map((rule) => rule.id)),
+  )
+  return {
+    id,
+    sourceGroupId: group.id,
+    targetGroupId: group.id,
+    direction: 'symmetric',
+    effectType: 'irrigationCompatibility',
+    polarity: 'contextDependent',
+    domain: { type: 'sharedIrrigationZone' },
+    strength: 'weak',
+    confidence: 'low',
+    sources: [{
+      id: `${id}.source-1`,
+      kind: 'personalObservation',
+      title: 'User-defined observation',
+    }],
   }
 }
 
@@ -486,6 +540,10 @@ function App() {
       (entity): entity is PlantEntity => entity.kind === 'plant',
     ),
     [landscapeEntities],
+  )
+  const interactionFindings = useMemo(
+    () => evaluatePlantInteractionRules(project),
+    [project],
   )
   const activeSelectedLandscapeEntityId = landscapeEntities.some(
     ({ id }) => id === selectedLandscapeEntityId,
@@ -919,6 +977,9 @@ function App() {
           plantingBeds={plantingBeds}
           irrigationZones={irrigationZones}
           plants={plants}
+          interactionGroups={project.interactionCatalog.groups}
+          interactionRules={project.interactionCatalog.rules}
+          interactionFindings={interactionFindings}
           selectedEntityId={activeSelectedLandscapeEntityId}
           unit={unit}
           canUndo={projectStore.canUndo()}
@@ -947,6 +1008,35 @@ function App() {
             })
             setSelectedLandscapeEntityId(null)
           }}
+          onAddGroup={() => projectStore.dispatch({
+            type: 'interactionGroup.add',
+            group: createUserInteractionGroup(project.interactionCatalog.groups),
+          })}
+          onReplaceGroup={(group) => projectStore.dispatch({
+            type: 'interactionGroup.replace',
+            group,
+          })}
+          onRemoveGroup={(groupId) => projectStore.dispatch({
+            type: 'interactionGroup.remove',
+            groupId,
+          })}
+          onAddRule={() => {
+            const rule = createUserInteractionRule(
+              project.interactionCatalog.groups,
+              project.interactionCatalog.rules,
+            )
+            if (!rule) return undefined
+            projectStore.dispatch({ type: 'interactionRule.add', rule })
+            return rule.id
+          }}
+          onReplaceRule={(rule) => projectStore.dispatch({
+            type: 'interactionRule.replace',
+            rule,
+          })}
+          onRemoveRule={(ruleId) => projectStore.dispatch({
+            type: 'interactionRule.remove',
+            ruleId,
+          })}
           onUndo={projectStore.undo}
           onRedo={projectStore.redo}
           onClose={() => closePanel('landscape')}

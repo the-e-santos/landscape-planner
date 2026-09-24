@@ -2,7 +2,8 @@
 
 ## Status
 
-Accepted during Milestone 11.
+Superseded in part by decision 0019. Evidence and explanation requirements remain
+accepted; taxonomy-pair selection was replaced by explicit interaction groups.
 
 ## Context
 

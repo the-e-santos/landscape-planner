@@ -59,6 +59,7 @@ const tomato: PlantEntity = {
   canopyRadiusMeters: 0.4,
   plantingBedId: vegetableBed.id,
   irrigationZoneIds: [dripZone.id],
+  interactionGroupIds: [],
 }
 
 function addLandscapeEntities(): LandscapeProject {
@@ -157,6 +158,7 @@ describe('landscape semantics', () => {
       position: { eastMeters: 2, elevationMeters: 0.5, northMeters: 1 },
       plantingBedId: undefined,
       irrigationZoneIds: [],
+      interactionGroupIds: [],
     }
     const baseProject = addLandscapeEntities()
     const project = {

@@ -4,6 +4,7 @@ import {
   createDefaultProject,
   DEFAULT_PARCEL_ID,
   getParcelEntity,
+  getPlantEntity,
   getPrimitiveEntity,
   getTerrainEntity,
 } from './project'
@@ -93,7 +94,7 @@ describe('project model', () => {
 
   it('rejects JSON with an unsupported schema version', () => {
     expect(() =>
-      deserializeProject(JSON.stringify({ schemaVersion: 3 })),
+      deserializeProject(JSON.stringify({ schemaVersion: 4 })),
     ).toThrow('Unsupported project schema version')
   })
 
@@ -103,8 +104,36 @@ describe('project model', () => {
 
     const migrated = deserializeProject(JSON.stringify(versionOne))
 
-    expect(migrated.schemaVersion).toBe(2)
+    expect(migrated.schemaVersion).toBe(3)
     expect(migrated.entities).toEqual(current.entities)
+    expect(migrated.interactionCatalog).toEqual({ groups: [], rules: [] })
+  })
+
+  it('migrates schema version 2 plants into an empty interaction catalog', () => {
+    const current = createDefaultProject()
+    const versionTwo = {
+      ...current,
+      schemaVersion: 2,
+      interactionCatalog: undefined,
+      entities: [
+        ...current.entities,
+        {
+          id: 'plant.v2',
+          kind: 'plant',
+          name: 'Version 2 plant',
+          taxonId: 'taxon:v2',
+          scientificName: 'Planta prioris',
+          position: { eastMeters: 0, elevationMeters: 1, northMeters: 0 },
+          canopyRadiusMeters: 0.5,
+          irrigationZoneIds: [],
+        },
+      ],
+    }
+
+    const migrated = deserializeProject(JSON.stringify(versionTwo))
+
+    expect(getPlantEntity(migrated, 'plant.v2').interactionGroupIds).toEqual([])
+    expect(migrated.interactionCatalog).toEqual({ groups: [], rules: [] })
   })
 
   it('reports the path to invalid project data', () => {

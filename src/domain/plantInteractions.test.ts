@@ -13,9 +13,11 @@ import {
 } from './plantInteractions'
 import { createDefaultProject, type LandscapeProject } from './project'
 import { applyProjectCommand } from './projectCommands'
+import { deserializeProject, serializeProject } from './projectSerialization'
 
 const evidence: EvidenceSource = {
   id: 'source.example-study',
+  kind: 'publication',
   title: 'Example study used only as a test fixture',
   authors: 'Test Author',
   publicationYear: 2024,
@@ -57,6 +59,7 @@ const tomato: PlantEntity = {
   canopyRadiusMeters: 0.4,
   plantingBedId: bed.id,
   irrigationZoneIds: [zone.id],
+  interactionGroupIds: ['group.tomato'],
 }
 
 const basil: PlantEntity = {
@@ -69,18 +72,27 @@ const basil: PlantEntity = {
   canopyRadiusMeters: 0.4,
   plantingBedId: bed.id,
   irrigationZoneIds: [zone.id],
+  interactionGroupIds: ['group.basil'],
 }
 
 function createInteractionProject(
   plants: readonly PlantEntity[] = [tomato, basil],
 ): LandscapeProject {
   const entities = [bed, zone, ...plants]
+  const withTomatoGroup = applyProjectCommand(createDefaultProject(), {
+    type: 'interactionGroup.add',
+    group: { id: 'group.tomato', name: 'Tomato group' },
+  })
+  const withGroups = applyProjectCommand(withTomatoGroup, {
+    type: 'interactionGroup.add',
+    group: { id: 'group.basil', name: 'Basil group' },
+  })
   return entities.reduce(
     (project, entity) => applyProjectCommand(project, {
       type: 'landscapeSemantic.add',
       entity,
     }),
-    createDefaultProject(),
+    withGroups,
   )
 }
 
@@ -89,8 +101,8 @@ function createRule(
 ): PlantInteractionRule {
   return {
     id: 'rule.test',
-    sourceTaxonId: tomato.taxonId,
-    targetTaxonId: basil.taxonId,
+    sourceGroupId: 'group.tomato',
+    targetGroupId: 'group.basil',
     direction: 'symmetric',
     effectType: 'pollination',
     polarity: 'beneficial',
@@ -211,5 +223,72 @@ describe('plant interaction rules', () => {
       minimumTemperatureCelsius: 15,
     })
     expect(findings[0]?.notes).toBe('Confirm the local growing context.')
+  })
+
+  it('evaluates persisted rules and protects referenced groups', () => {
+    const project = createInteractionProject()
+    const withRule = applyProjectCommand(project, {
+      type: 'interactionRule.add',
+      rule: createRule(),
+    })
+
+    expect(evaluatePlantInteractionRules(withRule)).toHaveLength(1)
+    expect(deserializeProject(serializeProject(withRule))).toEqual(withRule)
+    expect(() => applyProjectCommand(withRule, {
+      type: 'interactionGroup.remove',
+      groupId: 'group.tomato',
+    })).toThrow('references missing source group')
+  })
+
+  it('supports zero or multiple explicit group memberships', () => {
+    const project = createInteractionProject()
+    const ungrouped = { ...tomato, interactionGroupIds: [] }
+    const withUngroupedPlant = applyProjectCommand(project, {
+      type: 'landscapeSemantic.replace',
+      entity: ungrouped,
+    })
+    expect(evaluatePlantInteractionRules(withUngroupedPlant, [createRule()]))
+      .toEqual([])
+
+    const multipleGroups = {
+      ...tomato,
+      interactionGroupIds: ['group.tomato', 'group.basil'],
+    }
+    const withMultipleGroups = applyProjectCommand(project, {
+      type: 'landscapeSemantic.replace',
+      entity: multipleGroups,
+    })
+    expect(withMultipleGroups.entities.find(({ id }) => id === tomato.id))
+      .toMatchObject({ interactionGroupIds: ['group.tomato', 'group.basil'] })
+    expect(() => applyProjectCommand(project, {
+      type: 'landscapeSemantic.replace',
+      entity: {
+        ...tomato,
+        interactionGroupIds: ['group.tomato', 'group.tomato'],
+      },
+    })).toThrow('must not contain duplicates')
+  })
+
+  it('blocks removing a group assigned to a plant even without rules', () => {
+    const project = createInteractionProject()
+
+    expect(() => applyProjectCommand(project, {
+      type: 'interactionGroup.remove',
+      groupId: 'group.tomato',
+    })).toThrow(`Plant ${tomato.id} references missing interaction group`)
+  })
+
+  it('emits one symmetric finding for two plants in the same group', () => {
+    const secondTomato = {
+      ...basil,
+      interactionGroupIds: ['group.tomato'],
+    }
+    const project = createInteractionProject([tomato, secondTomato])
+    const sameGroupRule = createRule({
+      sourceGroupId: 'group.tomato',
+      targetGroupId: 'group.tomato',
+    })
+
+    expect(evaluatePlantInteractionRules(project, [sameGroupRule])).toHaveLength(1)
   })
 })

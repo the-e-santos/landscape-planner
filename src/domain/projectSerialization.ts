@@ -14,6 +14,9 @@ import {
 } from './landscape'
 import { validatePrimitiveEntity } from './primitive'
 import { DEFAULT_TERRAIN_ID } from './terrain'
+import {
+  validatePlantInteractionCatalog,
+} from './plantInteractions'
 
 type JsonRecord = Record<string, unknown>
 type ProjectMigration = (project: JsonRecord) => JsonRecord
@@ -21,6 +24,24 @@ type ProjectMigration = (project: JsonRecord) => JsonRecord
 /** A migration at key N converts schema N to N + 1. */
 const PROJECT_MIGRATIONS: Readonly<Partial<Record<number, ProjectMigration>>> = {
   1: (project) => ({ ...project, schemaVersion: 2 }),
+  2: (project) => ({
+    ...project,
+    schemaVersion: 3,
+    entities: Array.isArray(project.entities)
+      ? project.entities.map((entity) => {
+          if (
+            typeof entity === 'object' &&
+            entity !== null &&
+            !Array.isArray(entity) &&
+            entity.kind === 'plant'
+          ) {
+            return { ...entity, interactionGroupIds: [] }
+          }
+          return entity
+        })
+      : project.entities,
+    interactionCatalog: { groups: [], rules: [] },
+  }),
 }
 
 export class ProjectValidationError extends Error {
@@ -308,12 +329,96 @@ function validatePlant(value: JsonRecord, path: string): void {
   array(value.irrigationZoneIds, `${path}.irrigationZoneIds`).forEach(
     (zoneId, index) => string(zoneId, `${path}.irrigationZoneIds[${index}]`),
   )
+  array(value.interactionGroupIds, `${path}.interactionGroupIds`).forEach(
+    (groupId, index) => string(groupId, `${path}.interactionGroupIds[${index}]`),
+  )
 
   try {
     validatePlantEntity(value as unknown as PlantEntity)
   } catch (error) {
     fail(path, error instanceof Error ? error.message : 'invalid plant')
   }
+}
+
+function validateInteractionCatalog(value: unknown, path: string): void {
+  const catalog = record(value, path)
+  array(catalog.groups, `${path}.groups`).forEach((groupValue, index) => {
+    const groupPath = `${path}.groups[${index}]`
+    const group = record(groupValue, groupPath)
+    string(group.id, `${groupPath}.id`)
+    string(group.name, `${groupPath}.name`)
+    optionalString(group.description, `${groupPath}.description`)
+  })
+  array(catalog.rules, `${path}.rules`).forEach((ruleValue, index) => {
+    const rulePath = `${path}.rules[${index}]`
+    const rule = record(ruleValue, rulePath)
+    string(rule.id, `${rulePath}.id`)
+    string(rule.sourceGroupId, `${rulePath}.sourceGroupId`)
+    string(rule.targetGroupId, `${rulePath}.targetGroupId`)
+    oneOf(rule.direction, ['directed', 'symmetric'], `${rulePath}.direction`)
+    oneOf(rule.effectType, [
+      'pest',
+      'disease',
+      'nutrientCompetition',
+      'allelopathy',
+      'pollination',
+      'irrigationCompatibility',
+      'structuralSupport',
+      'shading',
+    ], `${rulePath}.effectType`)
+    oneOf(
+      rule.polarity,
+      ['beneficial', 'detrimental', 'contextDependent'],
+      `${rulePath}.polarity`,
+    )
+    const domain = record(rule.domain, `${rulePath}.domain`)
+    const domainType = oneOf(
+      domain.type,
+      ['foliageProximity', 'sharedSoil', 'sharedIrrigationZone'],
+      `${rulePath}.domain.type`,
+    )
+    if (domainType === 'foliageProximity') {
+      nonnegativeNumber(
+        domain.maximumGapMeters,
+        `${rulePath}.domain.maximumGapMeters`,
+      )
+    }
+    oneOf(rule.strength, ['weak', 'moderate', 'strong'], `${rulePath}.strength`)
+    oneOf(rule.confidence, ['low', 'medium', 'high'], `${rulePath}.confidence`)
+    if (rule.conditions !== undefined) {
+      const conditions = record(rule.conditions, `${rulePath}.conditions`)
+      Object.entries(conditions).forEach(([key, condition]) => {
+        if (
+          typeof condition !== 'string' &&
+          typeof condition !== 'boolean' &&
+          (typeof condition !== 'number' || !Number.isFinite(condition))
+        ) {
+          fail(`${rulePath}.conditions.${key}`, 'expected a string, boolean, or finite number')
+        }
+      })
+    }
+    array(rule.sources, `${rulePath}.sources`).forEach((sourceValue, sourceIndex) => {
+      const sourcePath = `${rulePath}.sources[${sourceIndex}]`
+      const source = record(sourceValue, sourcePath)
+      string(source.id, `${sourcePath}.id`)
+      oneOf(source.kind, [
+        'publication',
+        'extensionGuidance',
+        'webResource',
+        'personalObservation',
+        'localKnowledge',
+        'other',
+      ], `${sourcePath}.kind`)
+      string(source.title, `${sourcePath}.title`)
+      optionalString(source.authors, `${sourcePath}.authors`)
+      if (source.publicationYear !== undefined) {
+        nonnegativeNumber(source.publicationYear, `${sourcePath}.publicationYear`)
+      }
+      optionalString(source.url, `${sourcePath}.url`)
+      optionalString(source.locator, `${sourcePath}.locator`)
+    })
+    optionalString(rule.notes, `${rulePath}.notes`)
+  })
 }
 
 export function migrateProjectData(value: unknown): JsonRecord {
@@ -353,6 +458,7 @@ export function validateProjectData(value: unknown): LandscapeProject {
   string(project.name, 'project.name')
   const coordinates = record(project.coordinates, 'project.coordinates')
   finiteNumber(coordinates.northRotationRadians, 'project.coordinates.northRotationRadians')
+  validateInteractionCatalog(project.interactionCatalog, 'project.interactionCatalog')
 
   const entityKinds = new Map<string, string>()
   const entities = array(project.entities, 'project.entities')
@@ -416,6 +522,14 @@ export function validateProjectData(value: unknown): LandscapeProject {
     fail(
       'project.entities',
       error instanceof Error ? error.message : 'invalid landscape membership',
+    )
+  }
+  try {
+    validatePlantInteractionCatalog(validatedProject)
+  } catch (error) {
+    fail(
+      'project.interactionCatalog',
+      error instanceof Error ? error.message : 'invalid interaction catalog',
     )
   }
 

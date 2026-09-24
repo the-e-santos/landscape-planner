@@ -12,6 +12,12 @@ import type { ParcelPoint } from '../domain/parcel'
 import type { DisplayUnit } from '../domain/units'
 import { LengthInput } from './LengthInput'
 import { useDraggablePanel } from './useDraggablePanel'
+import { InteractionCatalogEditor } from './InteractionCatalogEditor'
+import type {
+  PlantInteractionFinding,
+  PlantInteractionGroup,
+  PlantInteractionRule,
+} from '../domain/plantInteractions'
 
 export type LandscapeCreationKind = 'plantingBed' | 'irrigationZone' | 'plant'
 
@@ -19,6 +25,9 @@ interface LandscapeEditorProps {
   readonly plantingBeds: readonly PlantingBedEntity[]
   readonly irrigationZones: readonly IrrigationZoneEntity[]
   readonly plants: readonly PlantEntity[]
+  readonly interactionGroups: readonly PlantInteractionGroup[]
+  readonly interactionRules: readonly PlantInteractionRule[]
+  readonly interactionFindings: readonly PlantInteractionFinding[]
   readonly selectedEntityId: string | null
   readonly unit: DisplayUnit
   readonly canUndo: boolean
@@ -27,6 +36,12 @@ interface LandscapeEditorProps {
   readonly onSelect: (entityId: string | null) => void
   readonly onReplace: (entity: LandscapeSemanticEntity) => void
   readonly onRemove: (entityId: string) => void
+  readonly onAddGroup: () => void
+  readonly onReplaceGroup: (group: PlantInteractionGroup) => void
+  readonly onRemoveGroup: (groupId: string) => void
+  readonly onAddRule: () => string | undefined
+  readonly onReplaceRule: (rule: PlantInteractionRule) => void
+  readonly onRemoveRule: (ruleId: string) => void
   readonly onUndo: () => void
   readonly onRedo: () => void
   readonly onClose: () => void
@@ -434,6 +449,7 @@ interface PlantEditorProps {
   readonly plant: PlantEntity
   readonly plantingBeds: readonly PlantingBedEntity[]
   readonly irrigationZones: readonly IrrigationZoneEntity[]
+  readonly interactionGroups: readonly PlantInteractionGroup[]
   readonly unit: DisplayUnit
   readonly replace: (entity: PlantEntity) => void
 }
@@ -442,6 +458,7 @@ function PlantEditor({
   plant,
   plantingBeds,
   irrigationZones,
+  interactionGroups,
   unit,
   replace,
 }: PlantEditorProps) {
@@ -565,6 +582,26 @@ function PlantEditor({
           </label>
         ))}
       </fieldset>
+      <fieldset className="landscape-memberships">
+        <legend>Interaction groups</legend>
+        {interactionGroups.length === 0 ? (
+          <p className="field-note">No interaction groups have been defined.</p>
+        ) : interactionGroups.map((group) => (
+          <label key={group.id}>
+            <input
+              type="checkbox"
+              checked={plant.interactionGroupIds.includes(group.id)}
+              onChange={(event) => replace({
+                ...plant,
+                interactionGroupIds: event.currentTarget.checked
+                  ? [...plant.interactionGroupIds, group.id]
+                  : plant.interactionGroupIds.filter((id) => id !== group.id),
+              })}
+            />
+            <span>{group.name}</span>
+          </label>
+        ))}
+      </fieldset>
     </>
   )
 }
@@ -573,6 +610,9 @@ export function LandscapeEditor({
   plantingBeds,
   irrigationZones,
   plants,
+  interactionGroups,
+  interactionRules,
+  interactionFindings,
   selectedEntityId,
   unit,
   canUndo,
@@ -581,6 +621,12 @@ export function LandscapeEditor({
   onSelect,
   onReplace,
   onRemove,
+  onAddGroup,
+  onReplaceGroup,
+  onRemoveGroup,
+  onAddRule,
+  onReplaceRule,
+  onRemoveRule,
   onUndo,
   onRedo,
   onClose,
@@ -702,6 +748,7 @@ export function LandscapeEditor({
                 plant={selected}
                 plantingBeds={plantingBeds}
                 irrigationZones={irrigationZones}
+                interactionGroups={interactionGroups}
                 unit={unit}
                 replace={replace}
               />
@@ -733,6 +780,18 @@ export function LandscapeEditor({
             Create an entity or select one above to edit its properties.
           </p>
         )}
+        <InteractionCatalogEditor
+          groups={interactionGroups}
+          rules={interactionRules}
+          plants={plants}
+          findings={interactionFindings}
+          onAddGroup={onAddGroup}
+          onReplaceGroup={onReplaceGroup}
+          onRemoveGroup={onRemoveGroup}
+          onAddRule={onAddRule}
+          onReplaceRule={onReplaceRule}
+          onRemoveRule={onRemoveRule}
+        />
       </div>
     </aside>
   )

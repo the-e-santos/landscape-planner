@@ -25,8 +25,23 @@ export type PlantInteractionDomain =
   | { readonly type: 'sharedSoil' }
   | { readonly type: 'sharedIrrigationZone' }
 
+export interface PlantInteractionGroup {
+  readonly id: string
+  readonly name: string
+  readonly description?: string
+}
+
+export type EvidenceSourceKind =
+  | 'publication'
+  | 'extensionGuidance'
+  | 'webResource'
+  | 'personalObservation'
+  | 'localKnowledge'
+  | 'other'
+
 export interface EvidenceSource {
   readonly id: string
+  readonly kind: EvidenceSourceKind
   readonly title: string
   readonly authors?: string
   readonly publicationYear?: number
@@ -36,8 +51,8 @@ export interface EvidenceSource {
 
 export interface PlantInteractionRule {
   readonly id: string
-  readonly sourceTaxonId: string
-  readonly targetTaxonId: string
+  readonly sourceGroupId: string
+  readonly targetGroupId: string
   readonly direction: 'directed' | 'symmetric'
   readonly effectType: PlantInteractionEffectType
   readonly polarity: 'beneficial' | 'detrimental' | 'contextDependent'
@@ -47,6 +62,11 @@ export interface PlantInteractionRule {
   readonly conditions?: Readonly<Record<string, string | number | boolean>>
   readonly sources: readonly EvidenceSource[]
   readonly notes?: string
+}
+
+export interface PlantInteractionCatalog {
+  readonly groups: readonly PlantInteractionGroup[]
+  readonly rules: readonly PlantInteractionRule[]
 }
 
 export interface PlantInteractionFinding {
@@ -73,6 +93,16 @@ function requireText(value: string, label: string): void {
 function validateEvidenceSource(source: EvidenceSource): void {
   requireText(source.id, 'Evidence source ID')
   requireText(source.title, 'Evidence source title')
+  if (![
+    'publication',
+    'extensionGuidance',
+    'webResource',
+    'personalObservation',
+    'localKnowledge',
+    'other',
+  ].includes(source.kind)) {
+    throw new Error('Evidence source kind is invalid')
+  }
   if (
     source.publicationYear !== undefined &&
     (!Number.isInteger(source.publicationYear) || source.publicationYear < 0)
@@ -84,8 +114,8 @@ function validateEvidenceSource(source: EvidenceSource): void {
 
 export function validatePlantInteractionRule(rule: PlantInteractionRule): void {
   requireText(rule.id, 'Plant interaction rule ID')
-  requireText(rule.sourceTaxonId, 'Source taxon ID')
-  requireText(rule.targetTaxonId, 'Target taxon ID')
+  requireText(rule.sourceGroupId, 'Source interaction group ID')
+  requireText(rule.targetGroupId, 'Target interaction group ID')
   if (!['directed', 'symmetric'].includes(rule.direction)) {
     throw new Error('Plant interaction rule direction is invalid')
   }
@@ -134,6 +164,13 @@ export function validatePlantInteractionRule(rule: PlantInteractionRule): void {
   }
 }
 
+export function validatePlantInteractionGroup(
+  group: PlantInteractionGroup,
+): void {
+  requireText(group.id, 'Plant interaction group ID')
+  requireText(group.name, 'Plant interaction group name')
+}
+
 export function validatePlantInteractionRuleSet(
   rules: readonly PlantInteractionRule[],
 ): void {
@@ -142,6 +179,34 @@ export function validatePlantInteractionRuleSet(
   if (ruleIds.size !== rules.length) {
     throw new Error('Plant interaction rule IDs must be unique')
   }
+}
+
+export function validatePlantInteractionCatalog(
+  project: LandscapeProject,
+): void {
+  const { groups, rules } = project.interactionCatalog
+  groups.forEach(validatePlantInteractionGroup)
+  validatePlantInteractionRuleSet(rules)
+  const groupIds = new Set(groups.map(({ id }) => id))
+  if (groupIds.size !== groups.length) {
+    throw new Error('Plant interaction group IDs must be unique')
+  }
+  rules.forEach((rule) => {
+    if (!groupIds.has(rule.sourceGroupId)) {
+      throw new Error(`Rule ${rule.id} references missing source group ${rule.sourceGroupId}`)
+    }
+    if (!groupIds.has(rule.targetGroupId)) {
+      throw new Error(`Rule ${rule.id} references missing target group ${rule.targetGroupId}`)
+    }
+  })
+  project.entities.forEach((entity) => {
+    if (entity.kind !== 'plant') return
+    entity.interactionGroupIds.forEach((groupId) => {
+      if (!groupIds.has(groupId)) {
+        throw new Error(`Plant ${entity.id} references missing interaction group ${groupId}`)
+      }
+    })
+  })
 }
 
 interface DomainMatch {
@@ -238,13 +303,13 @@ function createFinding(
   }
 }
 
-function taxonsMatch(
+function groupsMatch(
   source: PlantEntity,
   target: PlantEntity,
   rule: PlantInteractionRule,
 ): boolean {
-  return source.taxonId === rule.sourceTaxonId &&
-    target.taxonId === rule.targetTaxonId
+  return source.interactionGroupIds.includes(rule.sourceGroupId) &&
+    target.interactionGroupIds.includes(rule.targetGroupId)
 }
 
 /**
@@ -253,7 +318,7 @@ function taxonsMatch(
  */
 export function evaluatePlantInteractionRules(
   project: LandscapeProject,
-  rules: readonly PlantInteractionRule[],
+  rules: readonly PlantInteractionRule[] = project.interactionCatalog.rules,
 ): readonly PlantInteractionFinding[] {
   validatePlantInteractionRuleSet(rules)
   const plants = project.entities.filter(
@@ -271,16 +336,16 @@ export function evaluatePlantInteractionRules(
         const left = plants[leftIndex]
         const right = plants[rightIndex]
         const orientations = rule.direction === 'symmetric'
-          ? taxonsMatch(left, right, rule)
+          ? groupsMatch(left, right, rule)
             ? [[left, right] as const]
-            : taxonsMatch(right, left, rule)
+            : groupsMatch(right, left, rule)
               ? [[right, left] as const]
               : []
           : [
-              ...(taxonsMatch(left, right, rule)
+              ...(groupsMatch(left, right, rule)
                 ? [[left, right] as const]
                 : []),
-              ...(taxonsMatch(right, left, rule)
+              ...(groupsMatch(right, left, rule)
                 ? [[right, left] as const]
                 : []),
             ]

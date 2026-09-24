@@ -72,6 +72,8 @@ export interface PlantEntity {
   readonly canopyRadiusMeters: number
   readonly plantingBedId?: EntityId
   readonly irrigationZoneIds: readonly EntityId[]
+  /** Explicit zero-to-many memberships used by the user-authored rule catalog. */
+  readonly interactionGroupIds: readonly string[]
 }
 
 export type LandscapeSemanticEntity =
@@ -175,6 +177,11 @@ export function validatePlantEntity(entity: PlantEntity): void {
     throw new Error('Plant irrigation-zone memberships must not contain duplicates')
   }
   entity.irrigationZoneIds.forEach((id) => requireText(id, 'Irrigation zone ID'))
+  const uniqueGroups = new Set(entity.interactionGroupIds)
+  if (uniqueGroups.size !== entity.interactionGroupIds.length) {
+    throw new Error('Plant interaction-group memberships must not contain duplicates')
+  }
+  entity.interactionGroupIds.forEach((id) => requireText(id, 'Interaction group ID'))
 }
 
 export function validateLandscapeSemanticEntity(
@@ -215,6 +222,7 @@ export function cloneLandscapeSemanticEntity<T extends LandscapeSemanticEntity>(
         ...entity,
         position: { ...entity.position },
         irrigationZoneIds: [...entity.irrigationZoneIds],
+        interactionGroupIds: [...entity.interactionGroupIds],
       } as T
   }
 }
