@@ -1,6 +1,12 @@
 import type { ParcelGeometry } from './parcel'
 import type { EntityId, LandscapeProject, ProjectEntity } from './project'
 import {
+  cloneLandscapeSemanticEntity,
+  validateLandscapeMemberships,
+  validateLandscapeSemanticEntity,
+  type LandscapeSemanticEntity,
+} from './landscape'
+import {
   clonePrimitiveEntity,
   validatePrimitiveEntity,
   type PrimitiveEntity,
@@ -34,6 +40,18 @@ export type ProjectCommand =
     }
   | {
       readonly type: 'primitive.remove'
+      readonly entityId: EntityId
+    }
+  | {
+      readonly type: 'landscapeSemantic.add'
+      readonly entity: LandscapeSemanticEntity
+    }
+  | {
+      readonly type: 'landscapeSemantic.replace'
+      readonly entity: LandscapeSemanticEntity
+    }
+  | {
+      readonly type: 'landscapeSemantic.remove'
       readonly entityId: EntityId
     }
   | {
@@ -148,6 +166,11 @@ function replaceEntity(
   return { ...project, entities }
 }
 
+function validateLandscapeResult(project: LandscapeProject): LandscapeProject {
+  validateLandscapeMemberships(project)
+  return project
+}
+
 export function applyProjectCommand(
   project: LandscapeProject,
   command: ProjectCommand,
@@ -217,6 +240,65 @@ export function applyProjectCommand(
         ...project,
         entities: project.entities.filter(({ id }) => id !== command.entityId),
       }
+
+    case 'landscapeSemantic.add': {
+      validateLandscapeSemanticEntity(command.entity)
+      if (project.entities.some(({ id }) => id === command.entity.id)) {
+        throw new Error(`Project entity already exists: ${command.entity.id}`)
+      }
+
+      return validateLandscapeResult({
+        ...project,
+        entities: [
+          ...project.entities,
+          cloneLandscapeSemanticEntity(command.entity),
+        ],
+      })
+    }
+
+    case 'landscapeSemantic.replace': {
+      validateLandscapeSemanticEntity(command.entity)
+      const result = replaceEntity(project, command.entity.id, (entity) => {
+        if (
+          entity.kind !== 'plantingBed' &&
+          entity.kind !== 'irrigationZone' &&
+          entity.kind !== 'plant'
+        ) {
+          throw new Error(
+            `Entity is not a landscape semantic entity: ${command.entity.id}`,
+          )
+        }
+        if (entity.kind !== command.entity.kind) {
+          throw new Error(
+            `Cannot change landscape entity kind from ${entity.kind} to ${command.entity.kind}`,
+          )
+        }
+
+        return cloneLandscapeSemanticEntity(command.entity)
+      })
+      return validateLandscapeResult(result)
+    }
+
+    case 'landscapeSemantic.remove': {
+      const entity = project.entities.find(({ id }) => id === command.entityId)
+      if (!entity) {
+        throw new Error(`Project entity not found: ${command.entityId}`)
+      }
+      if (
+        entity.kind !== 'plantingBed' &&
+        entity.kind !== 'irrigationZone' &&
+        entity.kind !== 'plant'
+      ) {
+        throw new Error(
+          `Entity is not a landscape semantic entity: ${command.entityId}`,
+        )
+      }
+
+      return validateLandscapeResult({
+        ...project,
+        entities: project.entities.filter(({ id }) => id !== command.entityId),
+      })
+    }
 
     case 'terrain.spotElevation.add':
       return updateTerrain(project, command.terrainEntityId, (terrain) => {

@@ -7,8 +7,13 @@ import {
   createFlatTerrainEntity,
   type TerrainEntity,
 } from './terrain'
+import type {
+  IrrigationZoneEntity,
+  PlantEntity,
+  PlantingBedEntity,
+} from './landscape'
 
-export const PROJECT_SCHEMA_VERSION = 1 as const
+export const PROJECT_SCHEMA_VERSION = 2 as const
 
 export type ProjectId = string
 export type EntityId = string
@@ -25,7 +30,13 @@ export interface ParcelEntity {
   readonly geometry: ParcelGeometry
 }
 
-export type ProjectEntity = ParcelEntity | TerrainEntity | PrimitiveEntity
+export type ProjectEntity =
+  | ParcelEntity
+  | TerrainEntity
+  | PrimitiveEntity
+  | PlantingBedEntity
+  | IrrigationZoneEntity
+  | PlantEntity
 
 export interface LandscapeProject {
   readonly schemaVersion: typeof PROJECT_SCHEMA_VERSION
@@ -131,6 +142,45 @@ export function getTerrainEntity(
 
   if (entity.kind !== 'terrain') {
     throw new Error(`Entity is not terrain: ${entityId}`)
+  }
+
+  return entity
+}
+
+export function getPlantingBedEntity(
+  project: LandscapeProject,
+  entityId: EntityId,
+): PlantingBedEntity {
+  const entity = getProjectEntity(project, entityId)
+
+  if (entity.kind !== 'plantingBed') {
+    throw new Error(`Entity is not a planting bed: ${entityId}`)
+  }
+
+  return entity
+}
+
+export function getIrrigationZoneEntity(
+  project: LandscapeProject,
+  entityId: EntityId,
+): IrrigationZoneEntity {
+  const entity = getProjectEntity(project, entityId)
+
+  if (entity.kind !== 'irrigationZone') {
+    throw new Error(`Entity is not an irrigation zone: ${entityId}`)
+  }
+
+  return entity
+}
+
+export function getPlantEntity(
+  project: LandscapeProject,
+  entityId: EntityId,
+): PlantEntity {
+  const entity = getProjectEntity(project, entityId)
+
+  if (entity.kind !== 'plant') {
+    throw new Error(`Entity is not a plant: ${entityId}`)
   }
 
   return entity

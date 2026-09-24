@@ -93,8 +93,18 @@ describe('project model', () => {
 
   it('rejects JSON with an unsupported schema version', () => {
     expect(() =>
-      deserializeProject(JSON.stringify({ schemaVersion: 2 })),
+      deserializeProject(JSON.stringify({ schemaVersion: 3 })),
     ).toThrow('Unsupported project schema version')
+  })
+
+  it('migrates a schema version 1 project without changing its entities', () => {
+    const current = createDefaultProject()
+    const versionOne = { ...current, schemaVersion: 1 }
+
+    const migrated = deserializeProject(JSON.stringify(versionOne))
+
+    expect(migrated.schemaVersion).toBe(2)
+    expect(migrated.entities).toEqual(current.entities)
   })
 
   it('reports the path to invalid project data', () => {

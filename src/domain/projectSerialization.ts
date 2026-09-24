@@ -3,6 +3,15 @@ import {
   PROJECT_SCHEMA_VERSION,
   type LandscapeProject,
 } from './project'
+import {
+  validateIrrigationZoneEntity,
+  validateLandscapeMemberships,
+  validatePlantEntity,
+  validatePlantingBedEntity,
+  type IrrigationZoneEntity,
+  type PlantEntity,
+  type PlantingBedEntity,
+} from './landscape'
 import { validatePrimitiveEntity } from './primitive'
 import { DEFAULT_TERRAIN_ID } from './terrain'
 
@@ -10,7 +19,9 @@ type JsonRecord = Record<string, unknown>
 type ProjectMigration = (project: JsonRecord) => JsonRecord
 
 /** A migration at key N converts schema N to N + 1. */
-const PROJECT_MIGRATIONS: Readonly<Partial<Record<number, ProjectMigration>>> = {}
+const PROJECT_MIGRATIONS: Readonly<Partial<Record<number, ProjectMigration>>> = {
+  1: (project) => ({ ...project, schemaVersion: 2 }),
+}
 
 export class ProjectValidationError extends Error {
   constructor(message: string) {
@@ -211,6 +222,100 @@ function validatePrimitive(value: JsonRecord, path: string): void {
   }
 }
 
+function validateFootprint(value: unknown, path: string): void {
+  array(value, path).forEach((pointValue, index) => {
+    const pointPath = `${path}[${index}]`
+    const point = record(pointValue, pointPath)
+    finiteNumber(point.eastMeters, `${pointPath}.eastMeters`)
+    finiteNumber(point.northMeters, `${pointPath}.northMeters`)
+  })
+}
+
+function validatePlantingBed(value: JsonRecord, path: string): void {
+  validateFootprint(value.footprint, `${path}.footprint`)
+  const soil = record(value.soil, `${path}.soil`)
+  oneOf(
+    soil.texture,
+    ['sand', 'loam', 'clay', 'silt', 'unknown', 'custom'],
+    `${path}.soil.texture`,
+  )
+  optionalString(soil.customTextureLabel, `${path}.soil.customTextureLabel`)
+  oneOf(
+    soil.drainage,
+    ['rapid', 'wellDrained', 'moderate', 'poor', 'unknown'],
+    `${path}.soil.drainage`,
+  )
+  oneOf(
+    soil.surfaceCover,
+    [
+      'bareSoil',
+      'mulch',
+      'turf',
+      'groundcover',
+      'gravel',
+      'concrete',
+      'pavers',
+      'other',
+    ],
+    `${path}.soil.surfaceCover`,
+  )
+  finiteNumber(soil.usableRootDepthMeters, `${path}.soil.usableRootDepthMeters`)
+  if (soil.ph !== undefined) finiteNumber(soil.ph, `${path}.soil.ph`)
+  if (soil.organicMatterPercent !== undefined) {
+    finiteNumber(soil.organicMatterPercent, `${path}.soil.organicMatterPercent`)
+  }
+  optionalString(soil.notes, `${path}.soil.notes`)
+
+  try {
+    validatePlantingBedEntity(value as unknown as PlantingBedEntity)
+  } catch (error) {
+    fail(path, error instanceof Error ? error.message : 'invalid planting bed')
+  }
+}
+
+function validateIrrigationZone(value: JsonRecord, path: string): void {
+  if (value.footprint !== undefined) {
+    validateFootprint(value.footprint, `${path}.footprint`)
+  }
+  oneOf(
+    value.deliveryMethod,
+    ['drip', 'spray', 'soaker', 'manual', 'other'],
+    `${path}.deliveryMethod`,
+  )
+  if (value.weeklyTargetMillimeters !== undefined) {
+    finiteNumber(value.weeklyTargetMillimeters, `${path}.weeklyTargetMillimeters`)
+  }
+  optionalString(value.notes, `${path}.notes`)
+
+  try {
+    validateIrrigationZoneEntity(value as unknown as IrrigationZoneEntity)
+  } catch (error) {
+    fail(path, error instanceof Error ? error.message : 'invalid irrigation zone')
+  }
+}
+
+function validatePlant(value: JsonRecord, path: string): void {
+  string(value.taxonId, `${path}.taxonId`)
+  string(value.scientificName, `${path}.scientificName`)
+  optionalString(value.cultivar, `${path}.cultivar`)
+  optionalString(value.commonName, `${path}.commonName`)
+  const position = record(value.position, `${path}.position`)
+  finiteNumber(position.eastMeters, `${path}.position.eastMeters`)
+  finiteNumber(position.elevationMeters, `${path}.position.elevationMeters`)
+  finiteNumber(position.northMeters, `${path}.position.northMeters`)
+  finiteNumber(value.canopyRadiusMeters, `${path}.canopyRadiusMeters`)
+  optionalString(value.plantingBedId, `${path}.plantingBedId`)
+  array(value.irrigationZoneIds, `${path}.irrigationZoneIds`).forEach(
+    (zoneId, index) => string(zoneId, `${path}.irrigationZoneIds[${index}]`),
+  )
+
+  try {
+    validatePlantEntity(value as unknown as PlantEntity)
+  } catch (error) {
+    fail(path, error instanceof Error ? error.message : 'invalid plant')
+  }
+}
+
 export function migrateProjectData(value: unknown): JsonRecord {
   let project = record(value, 'project')
   const version = project.schemaVersion
@@ -259,7 +364,11 @@ export function validateProjectData(value: unknown): LandscapeProject {
       fail(`${path}.id`, `duplicate entity ID "${id}"`)
     }
     string(entity.name, `${path}.name`)
-    const kind = oneOf(entity.kind, ['parcel', 'terrain', 'primitive'], `${path}.kind`)
+    const kind = oneOf(
+      entity.kind,
+      ['parcel', 'terrain', 'primitive', 'plantingBed', 'irrigationZone', 'plant'],
+      `${path}.kind`,
+    )
     entityKinds.set(id, kind)
     if (kind === 'parcel') {
       const geometry = record(entity.geometry, `${path}.geometry`)
@@ -276,8 +385,14 @@ export function validateProjectData(value: unknown): LandscapeProject {
       nonnegativeNumber(geometry.uncertaintyMeters, `${path}.geometry.uncertaintyMeters`)
     } else if (kind === 'terrain') {
       validateTerrain(entity, path)
-    } else {
+    } else if (kind === 'primitive') {
       validatePrimitive(entity, path)
+    } else if (kind === 'plantingBed') {
+      validatePlantingBed(entity, path)
+    } else if (kind === 'irrigationZone') {
+      validateIrrigationZone(entity, path)
+    } else {
+      validatePlant(entity, path)
     }
   })
 
@@ -294,7 +409,17 @@ export function validateProjectData(value: unknown): LandscapeProject {
     fail('project.entities', `required entity "${DEFAULT_TERRAIN_ID}" must be terrain`)
   }
 
-  return project as unknown as LandscapeProject
+  const validatedProject = project as unknown as LandscapeProject
+  try {
+    validateLandscapeMemberships(validatedProject)
+  } catch (error) {
+    fail(
+      'project.entities',
+      error instanceof Error ? error.message : 'invalid landscape membership',
+    )
+  }
+
+  return validatedProject
 }
 
 export function serializeProject(project: LandscapeProject): string {
