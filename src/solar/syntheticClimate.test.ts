@@ -1,6 +1,10 @@
 import { describe, expect, it } from 'vitest'
 import { overcastProbabilityAt } from './climateModel'
-import { createSyntheticClimateModel } from './syntheticClimate'
+import {
+  createSyntheticClimateModel,
+  extraterrestrialNormalIrradianceWattsPerSquareMeter,
+  relativeOpticalAirMass,
+} from './syntheticClimate'
 import { TREGENZA_SKY_PATCHES } from './skyPatches'
 
 const noon = {
@@ -30,9 +34,54 @@ describe('synthetic climate model', () => {
   it('keeps the direct solar disk out of diffuse sky radiance', () => {
     const climate = createSyntheticClimateModel()
     expect(climate.getDirectNormalIrradiance({ ...noon, skyCondition: 'clear' }))
-      .toBe(800)
+      .toBeGreaterThan(700)
     expect(climate.getDirectNormalIrradiance({ ...noon, skyCondition: 'overcast' }))
       .toBe(0)
+  })
+
+  it('uses a high-sun reference and air mass to taper clear DNI', () => {
+    const climate = createSyntheticClimateModel()
+    const equatorialEquinox = {
+      date: { year: 2024, month: 3, day: 20 },
+      latitudeRadians: 0,
+      skyCondition: 'clear',
+    } as const
+    const noonDni = climate.getDirectNormalIrradiance({
+      ...equatorialEquinox,
+      localSolarTimeHours: 12,
+    })
+    const morningDni = climate.getDirectNormalIrradiance({
+      ...equatorialEquinox,
+      localSolarTimeHours: 9,
+    })
+
+    expect(noonDni).toBeCloseTo(850, 0)
+    expect(morningDni).toBeLessThan(noonDni)
+    expect(morningDni).toBeGreaterThan(0)
+    expect(relativeOpticalAirMass(Math.PI / 2)).toBeCloseTo(1, 3)
+    expect(extraterrestrialNormalIrradianceWattsPerSquareMeter(
+      equatorialEquinox.date,
+    )).toBeGreaterThan(1_300)
+  })
+
+  it('scales DHI with the sine of solar altitude', () => {
+    const climate = createSyntheticClimateModel()
+    const equatorialEquinox = {
+      date: { year: 2024, month: 3, day: 20 },
+      latitudeRadians: 0,
+      skyCondition: 'clear',
+    } as const
+    const noonDhi = climate.getDiffuseHorizontalIrradiance({
+      ...equatorialEquinox,
+      localSolarTimeHours: 12,
+    })
+    const morningDhi = climate.getDiffuseHorizontalIrradiance({
+      ...equatorialEquinox,
+      localSolarTimeHours: 9,
+    })
+
+    expect(noonDhi).toBeCloseTo(120, 1)
+    expect(morningDhi / noonDhi).toBeCloseTo(Math.SQRT1_2, 2)
   })
 })
 

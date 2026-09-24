@@ -4,7 +4,11 @@ import { createDefaultProject } from '../domain/project'
 import type { PrimitiveEntity } from '../domain/primitive'
 import { createFlatTerrainEntity } from '../domain/terrain'
 import { generateTerrainExposureLayer } from './terrainExposure'
-import { DEFAULT_SYNTHETIC_CLIMATE } from './syntheticClimate'
+import {
+  createSyntheticClimateModel,
+  DEFAULT_SYNTHETIC_CLIMATE,
+} from './syntheticClimate'
+import { calculateSolarPosition } from './solarPosition'
 
 const settings = {
   enabled: true,
@@ -19,6 +23,14 @@ const settings = {
   spacingMeters: 1,
   displayChannel: 'direct',
 } as const
+
+const position = calculateSolarPosition(settings.solarPosition)
+const expectedHorizontalDirect = createSyntheticClimateModel(
+  DEFAULT_SYNTHETIC_CLIMATE,
+).getDirectNormalIrradiance({
+  ...settings.solarPosition,
+  skyCondition: settings.skyCondition,
+}) * Math.sin(position.altitudeRadians)
 
 describe('terrain exposure sampling', () => {
   it('subdivides terrain deterministically at the requested spacing', () => {
@@ -49,8 +61,8 @@ describe('terrain exposure sampling', () => {
     expect(first).toEqual(second)
     expect(first.triangles.length).toBeGreaterThan(2)
     expect(first.vertices.length).toBeGreaterThan(4)
-    expect(first.minimumValue).toBeCloseTo(800, 2)
-    expect(first.maximumValue).toBeCloseTo(800, 2)
+    expect(first.minimumValue).toBeCloseTo(expectedHorizontalDirect, 2)
+    expect(first.maximumValue).toBeCloseTo(expectedHorizontalDirect, 2)
   })
 
   it('captures an opaque primitive shadow without changing terrain state', () => {
@@ -80,7 +92,7 @@ describe('terrain exposure sampling', () => {
     )
 
     expect(layer.minimumValue).toBe(0)
-    expect(layer.maximumValue).toBeCloseTo(800, 2)
+    expect(layer.maximumValue).toBeCloseTo(expectedHorizontalDirect, 2)
     expect(terrain).toEqual(createFlatTerrainEntity({
       eastWestMeters: 6,
       northSouthMeters: 6,

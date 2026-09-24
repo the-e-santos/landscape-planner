@@ -19,6 +19,8 @@ import { prepareSurfaceExposure } from '../solar/exposureSettings'
 import { useDraggablePanel } from './useDraggablePanel'
 import type { SyntheticSkyCondition } from '../solar/climateModel'
 import type { SyntheticClimateParameters } from '../solar/syntheticClimate'
+import { interpretAccumulatedExposure } from '../solar/exposureInterpretation'
+import { createDirectSunDurationEvaluator } from '../solar/directSunDuration'
 
 interface SolarAnalysisPanelProps {
   readonly project: LandscapeProject
@@ -73,7 +75,7 @@ export function SolarAnalysisPanel({
   const [date, setDate] = useState('2026-06-21')
   const [solarTimeHours, setSolarTimeHours] = useState(12)
   const [latitudeDegrees, setLatitudeDegrees] = useState(40)
-  const [dni, setDni] = useState(800)
+  const [dni, setDni] = useState(850)
   const [clearDhi, setClearDhi] = useState(120)
   const [overcastDni, setOvercastDni] = useState(0)
   const [overcastDhi, setOvercastDhi] = useState(250)
@@ -117,12 +119,12 @@ export function SolarAnalysisPanel({
   )
   const climateParameters = useMemo<SyntheticClimateParameters>(() => ({
     clear: {
-      directNormalIrradianceWattsPerSquareMeter: dni,
-      diffuseHorizontalIrradianceWattsPerSquareMeter: clearDhi,
+      referenceDirectNormalIrradianceWattsPerSquareMeter: dni,
+      referenceDiffuseHorizontalIrradianceWattsPerSquareMeter: clearDhi,
     },
     overcast: {
-      directNormalIrradianceWattsPerSquareMeter: overcastDni,
-      diffuseHorizontalIrradianceWattsPerSquareMeter: overcastDhi,
+      referenceDirectNormalIrradianceWattsPerSquareMeter: overcastDni,
+      referenceDiffuseHorizontalIrradianceWattsPerSquareMeter: overcastDhi,
     },
   }), [clearDhi, dni, overcastDhi, overcastDni])
   const selectedDni = skyCondition === 'clear' ? dni : overcastDni
@@ -227,34 +229,76 @@ export function SolarAnalysisPanel({
     if (
       !analysisSettings.enabled ||
       analysisSettings.analysisMode !== 'accumulated'
-    ) return { exposure: null, error: null }
+    ) return {
+      exposure: null,
+      unobstructedExposure: null,
+      directSunDuration: null,
+      error: null,
+    }
     try {
       const prepared = prepareSurfaceExposure(project, analysisSettings)
+      const unobstructedProject = {
+        ...project,
+        entities: project.entities.filter((entity) => entity.kind !== 'primitive'),
+      }
+      const unobstructedPrepared = prepareSurfaceExposure(
+        unobstructedProject,
+        analysisSettings,
+      )
+      const surface = {
+        eastMeters: point.eastMeters,
+        elevationMeters: point.elevationMeters,
+        northMeters: point.northMeters,
+        normal: {
+          east: point.normalEast,
+          up: point.normalUp,
+          north: point.normalNorth,
+        },
+        ...(point.owningEntityId
+          ? { owningEntityId: point.owningEntityId }
+          : {}),
+      }
       return {
-        exposure: prepared.evaluate({
-          eastMeters: point.eastMeters,
-          elevationMeters: point.elevationMeters,
-          northMeters: point.northMeters,
-          normal: {
-            east: point.normalEast,
-            up: point.normalUp,
-            north: point.normalNorth,
-          },
-          ...(point.owningEntityId
-            ? { owningEntityId: point.owningEntityId }
-            : {}),
-        }),
+        exposure: prepared.evaluate(surface),
+        unobstructedExposure: unobstructedPrepared.evaluate(surface),
+        directSunDuration: createDirectSunDurationEvaluator(
+          project,
+          analysisSettings.period,
+        )(surface),
         error: null,
       }
     } catch (error) {
       return {
         exposure: null,
+        unobstructedExposure: null,
+        directSunDuration: null,
         error: error instanceof Error
           ? error.message
           : 'Accumulated point query failed',
       }
     }
   }, [analysisSettings, point, project])
+  const accumulatedInterpretation = useMemo(() => {
+    if (
+      !analysisSettings.enabled ||
+      analysisSettings.analysisMode !== 'accumulated' ||
+      !accumulatedPointCalculation.exposure
+    ) return null
+    return interpretAccumulatedExposure({
+      startDate: analysisSettings.period.startDate,
+      endDate: analysisSettings.period.endDate,
+      directKilowattHoursPerSquareMeter:
+        accumulatedPointCalculation.exposure.direct,
+      diffuseKilowattHoursPerSquareMeter:
+        accumulatedPointCalculation.exposure.diffuse,
+      ...(accumulatedPointCalculation.unobstructedExposure
+        ? {
+            unobstructedTotalKilowattHoursPerSquareMeter:
+              accumulatedPointCalculation.unobstructedExposure.total,
+          }
+        : {}),
+    })
+  }, [accumulatedPointCalculation, analysisSettings])
   const instantPointCalculation = useMemo(() => {
     if (
       !analysisSettings.enabled ||
@@ -456,7 +500,7 @@ export function SolarAnalysisPanel({
             </span>
           </label>
           <label className="field">
-            <span>Clear DNI</span>
+            <span>Clear high-sun DNI</span>
             <span className="solar-number-input">
               <input
                 type="number" min="0" step="10" value={dni}
@@ -466,7 +510,7 @@ export function SolarAnalysisPanel({
             </span>
           </label>
           <label className="field">
-            <span>Clear DHI</span>
+            <span>Clear reference DHI</span>
             <span className="solar-number-input">
               <input
                 type="number" min="0" step="10" value={clearDhi}
@@ -476,7 +520,7 @@ export function SolarAnalysisPanel({
             </span>
           </label>
           <label className="field">
-            <span>Overcast DNI</span>
+            <span>Overcast high-sun DNI</span>
             <span className="solar-number-input">
               <input
                 type="number" min="0" step="10" value={overcastDni}
@@ -486,7 +530,7 @@ export function SolarAnalysisPanel({
             </span>
           </label>
           <label className="field">
-            <span>Overcast DHI</span>
+            <span>Overcast reference DHI</span>
             <span className="solar-number-input">
               <input
                 type="number" min="0" step="10" value={overcastDhi}
@@ -495,6 +539,48 @@ export function SolarAnalysisPanel({
               <span>W/m²</span>
             </span>
           </label>
+          <p className="field-note">
+            High-sun DNI is referenced at optical air mass one. Reference DHI
+            represents an overhead sun; the model reduces both through the day.
+          </p>
+          <details className="solar-reference">
+            <summary>Climate value quick reference</summary>
+            <table>
+              <thead>
+                <tr>
+                  <th>Input</th>
+                  <th>Typical</th>
+                  <th>Useful range</th>
+                </tr>
+              </thead>
+              <tbody>
+                <tr>
+                  <td>Clear DNI</td>
+                  <td>850</td>
+                  <td>700–950</td>
+                </tr>
+                <tr>
+                  <td>Clear DHI</td>
+                  <td>120</td>
+                  <td>50–160</td>
+                </tr>
+                <tr>
+                  <td>Overcast DNI</td>
+                  <td>0</td>
+                  <td>0–100</td>
+                </tr>
+                <tr>
+                  <td>Overcast DHI</td>
+                  <td>250</td>
+                  <td>100–400</td>
+                </tr>
+              </tbody>
+            </table>
+            <p>
+              W/m² reference values. Use the defaults for a neutral synthetic
+              comparison; local weather data will vary.
+            </p>
+          </details>
         </section>
         <section className="solar-heatmap-controls" aria-label="Exposure heatmap">
           <label className="snap-toggle">
@@ -656,10 +742,87 @@ export function SolarAnalysisPanel({
                 Total {formatNumber(accumulatedPointCalculation.exposure.total, 2)} kWh/m²
               </span>
             </div>
+            {accumulatedInterpretation && (
+              <dl>
+                <div>
+                  <dt>Daily average</dt>
+                  <dd>
+                    {formatNumber(
+                      accumulatedInterpretation
+                        .averageDailyTotalKilowattHoursPerSquareMeter,
+                      2,
+                    )} kWh/m²/day
+                  </dd>
+                </div>
+                <div>
+                  <dt>Equivalent peak-sun energy</dt>
+                  <dd>
+                    {formatNumber(
+                      accumulatedInterpretation.equivalentPeakSunHoursPerDay,
+                      2,
+                    )} h/day
+                  </dd>
+                </div>
+                <div>
+                  <dt>Energy band</dt>
+                  <dd>{accumulatedInterpretation.energyBandLabel}</dd>
+                </div>
+                <div>
+                  <dt>Direct / diffuse</dt>
+                  <dd>
+                    {formatNumber(accumulatedInterpretation.directShare * 100, 0)}% /{' '}
+                    {formatNumber(accumulatedInterpretation.diffuseShare * 100, 0)}%
+                  </dd>
+                </div>
+                <div>
+                  <dt>Vs. unobstructed</dt>
+                  <dd>
+                    {accumulatedInterpretation.unobstructedExposureFraction === null
+                      ? '—'
+                      : `${formatNumber(
+                          accumulatedInterpretation.unobstructedExposureFraction * 100,
+                          0,
+                        )}%`}
+                  </dd>
+                </div>
+                {accumulatedPointCalculation.directSunDuration && (
+                  <>
+                    <div>
+                      <dt>Potential direct sun</dt>
+                      <dd>
+                        {formatNumber(
+                          accumulatedPointCalculation.directSunDuration
+                            .potentialDirectSunHours /
+                            accumulatedInterpretation.periodDayCount,
+                          2,
+                        )} h/day
+                      </dd>
+                    </div>
+                    <div>
+                      <dt>Transmission-weighted sun</dt>
+                      <dd>
+                        {formatNumber(
+                          accumulatedPointCalculation.directSunDuration
+                            .transmissionWeightedDirectSunHours /
+                            accumulatedInterpretation.periodDayCount,
+                          2,
+                        )} h/day
+                      </dd>
+                    </div>
+                  </>
+                )}
+              </dl>
+            )}
             <p className="field-note">
               Synthetic clear/overcast expected value from {periodStartDate} through{' '}
               {periodEndDate}; morning/noon/evening overcast probabilities are{' '}
               {morningOvercastPercent}%/{noonOvercastPercent}%/{eveningOvercastPercent}%.
+            </p>
+            <p className="field-note">
+              The energy band and peak-sun equivalent describe broadband radiant
+              energy, not plant-specific PAR/DLI. Potential direct sun counts a
+              nonzero solar-disk path; transmission-weighted sun discounts screens
+              and canopies by their solar transmittance.
             </p>
           </section>
         ) : analysisMode === 'instant' && (calculation.error || instantPointCalculation.error) ? (
@@ -696,6 +859,7 @@ export function SolarAnalysisPanel({
         ) : null}
         <p className="solar-method-note">
           Local apparent solar time; azimuth is clockwise from true north.
+          DNI follows Kasten–Young relative air mass; DHI follows solar altitude.
           Constant transmission is applied once per intersected primitive.
         </p>
       </div>

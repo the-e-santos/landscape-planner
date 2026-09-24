@@ -127,12 +127,12 @@ describe('accumulated direct exposure', () => {
   it('uses overcast probability as an expected-value DNI weight', () => {
     const climate = createSyntheticClimateModel({
       clear: {
-        directNormalIrradianceWattsPerSquareMeter: 800,
-        diffuseHorizontalIrradianceWattsPerSquareMeter: 100,
+        referenceDirectNormalIrradianceWattsPerSquareMeter: 800,
+        referenceDiffuseHorizontalIrradianceWattsPerSquareMeter: 100,
       },
       overcast: {
-        directNormalIrradianceWattsPerSquareMeter: 200,
-        diffuseHorizontalIrradianceWattsPerSquareMeter: 300,
+        referenceDirectNormalIrradianceWattsPerSquareMeter: 200,
+        referenceDiffuseHorizontalIrradianceWattsPerSquareMeter: 300,
       },
     })
     const basePeriod = {
@@ -155,10 +155,20 @@ describe('accumulated direct exposure', () => {
         { localSolarTimeHours: 24, probability: 0.5 },
       ],
     }, 256, climate)
+    const overcast = buildClimateDirectDirectionSet({
+      ...basePeriod,
+      overcastProbabilityCurve: [
+        { localSolarTimeHours: 0, probability: 1 },
+        { localSolarTimeHours: 24, probability: 1 },
+      ],
+    }, 256, climate)
 
     expect(mixed.totalDirectNormalExposureKilowattHoursPerSquareMeter)
       .toBeCloseTo(
-        clear.totalDirectNormalExposureKilowattHoursPerSquareMeter * 0.625,
+        (
+          clear.totalDirectNormalExposureKilowattHoursPerSquareMeter +
+          overcast.totalDirectNormalExposureKilowattHoursPerSquareMeter
+        ) / 2,
         10,
       )
     expect(mixed.temporalSampleCount).toBe(clear.temporalSampleCount)

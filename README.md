@@ -1,32 +1,55 @@
-# React + TypeScript + Vite
+# Landscape Planner
 
-This template provides a minimal setup to get React working in Vite with HMR and some Oxlint rules.
+Landscape Planner is a browser-based, local-first residential landscape planning
+application. It combines an interactive Three.js yard model with quantitative
+direct and diffuse solar-exposure analysis, explicit geometric uncertainty, and
+eventual evidence-aware planting guidance.
 
-Currently, two official plugins are available:
+The project is a hobby/open-source prototype focused on transparent calculations,
+testable numerical kernels, and an understandable architecture.
 
-- [@vitejs/plugin-react](https://github.com/vitejs/vite-plugin-react/blob/main/packages/plugin-react) uses [Oxc](https://oxc.rs)
-- [@vitejs/plugin-react-swc](https://github.com/vitejs/vite-plugin-react/blob/main/packages/plugin-react-swc) uses [SWC](https://swc.rs/)
+## Run locally
 
-## React Compiler
+Requirements:
 
-The React Compiler is not enabled on this template because of its impact on dev & build performances. To add it, see [this documentation](https://react.dev/learn/react-compiler/installation).
+- Node.js and npm
+- A current browser with WebGPU support for the preferred rendering path
 
-## Expanding the Oxlint configuration
+From PowerShell:
 
-If you are developing a production application, we recommend enabling type-aware lint rules by installing `oxlint-tsgolint` and editing `.oxlintrc.json`:
-
-```json
-{
-  "$schema": "./node_modules/oxlint/configuration_schema.json",
-  "plugins": ["react", "typescript", "oxc"],
-  "options": {
-    "typeAware": true
-  },
-  "rules": {
-    "react/rules-of-hooks": "error",
-    "react/only-export-components": ["warn", { "allowConstantExport": true }]
-  }
-}
+```powershell
+npm.cmd install
+npm.cmd run dev
 ```
 
-See the [Oxlint rules documentation](https://oxc.rs/docs/guide/usage/linter/rules) for the full list of rules and categories.
+Open [http://localhost:5173](http://localhost:5173). Press `Ctrl+C` in the terminal
+to stop the development server.
+
+## Verification
+
+```powershell
+npm.cmd run lint
+npm.cmd test
+npm.cmd run build
+```
+
+## Documentation
+
+- [Foundational project plan](docs/PROJECT_PLAN.md)
+- [Solar analysis guide](docs/SOLAR_ANALYSIS.md)
+- [Coordinate and unit conventions](docs/COORDINATES.md)
+- [Architecture decisions](docs/decisions/)
+
+The solar guide explains DNI, DHI, the synthetic climate parameters, direct and
+diffuse accumulation, heatmaps, equivalent peak-sun energy, direct-sun duration,
+horticultural interpretation, and current limitations.
+
+## Current status
+
+Milestones 1–9 are complete. Milestone 10 currently includes the 145-patch
+Tregenza diffuse sky, normalized synthetic clear/overcast climate states,
+time-varying DNI/DHI, accumulated direct and diffuse exposure, surface heatmaps,
+quantitative probes, and horticultural comparison metrics.
+
+See [docs/PROJECT_PLAN.md](docs/PROJECT_PLAN.md) for the ordered roadmap and
+deferred scope.
