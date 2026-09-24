@@ -3,12 +3,19 @@ import { OrbitControls } from 'three/addons/controls/OrbitControls.js'
 import { TransformControls } from 'three/addons/controls/TransformControls.js'
 import { getParcelBounds, type ParcelGeometry } from '../domain/parcel'
 import type { LandscapeProject, ParcelEntity } from '../domain/project'
+import type {
+  IrrigationZoneEntity,
+  PlantEntity,
+  PlantingBedEntity,
+} from '../domain/landscape'
 import {
   resizePrimitiveGeometry,
   snapPrimitiveGeometryDimensions,
   type PrimitiveEntity,
 } from '../domain/primitive'
 import type { TerrainEntity } from '../domain/terrain'
+import { deriveTerrainMesh, type DerivedTerrainMesh } from '../domain/terrainMesh'
+import { sampleTerrainElevation } from '../domain/terrainElevation'
 import {
   createParcelView,
   PARCEL_VIEW_HEIGHT,
@@ -19,6 +26,12 @@ import {
   createPrimitiveView,
   type PrimitiveView,
 } from './createPrimitiveView'
+import {
+  createIrrigationZoneView,
+  createPlantingBedView,
+  createPlantView,
+  type LandscapeEntityView,
+} from './createLandscapeView'
 import type { TerrainExposureLayer } from '../solar/terrainExposure'
 import type { PrimitiveExposureLayer } from '../solar/primitiveExposure'
 import type { SurfacePoint } from '../solar/pointSolar'
@@ -216,6 +229,23 @@ export function createYardScene(
     string,
     SceneViewEntry<PrimitiveEntity, PrimitiveView>
   >()
+  const plantingBedViews = new Map<
+    string,
+    SceneViewEntry<PlantingBedEntity, LandscapeEntityView<PlantingBedEntity>>
+  >()
+  const irrigationZoneViews = new Map<
+    string,
+    SceneViewEntry<IrrigationZoneEntity, LandscapeEntityView<IrrigationZoneEntity>>
+  >()
+  const plantViews = new Map<
+    string,
+    SceneViewEntry<PlantEntity, LandscapeEntityView<PlantEntity>>
+  >()
+  let terrainMesh: DerivedTerrainMesh | undefined
+  const elevationAt = (eastMeters: number, northMeters: number) =>
+    terrainMesh
+      ? sampleTerrainElevation(terrainMesh, eastMeters, northMeters)
+      : undefined
   let selectedEntityId: string | null = null
   let manipulationMode: PrimitiveManipulationMode = 'translate'
   let manipulationStartEntity: PrimitiveEntity | null = null
@@ -438,8 +468,10 @@ export function createYardScene(
           pendingChangedBounds.push(conservativePrimitiveBounds(next))
         }
         if (
-          (previous && previous.kind !== 'primitive') ||
-          (next && next.kind !== 'primitive')
+          previous?.kind === 'parcel' ||
+          previous?.kind === 'terrain' ||
+          next?.kind === 'parcel' ||
+          next?.kind === 'terrain'
         ) {
           invalidateAllExposureTiles = true
         }
@@ -457,6 +489,27 @@ export function createYardScene(
     const primitiveEntities = project.entities.filter(
       (entity): entity is PrimitiveEntity => entity.kind === 'primitive',
     )
+    const plantingBedEntities = project.entities.filter(
+      (entity): entity is PlantingBedEntity => entity.kind === 'plantingBed',
+    )
+    const irrigationZoneEntities = project.entities.filter(
+      (entity): entity is IrrigationZoneEntity =>
+        entity.kind === 'irrigationZone',
+    )
+    const plantEntities = project.entities.filter(
+      (entity): entity is PlantEntity => entity.kind === 'plant',
+    )
+    const primaryTerrain = terrainEntities[0]
+    const previousPrimaryTerrain = previousProject?.entities.find(
+      (entity): entity is TerrainEntity => entity.kind === 'terrain',
+    )
+    const terrainProjectionChanged = previousPrimaryTerrain !== primaryTerrain
+    if (terrainProjectionChanged) {
+      const terrainResult = primaryTerrain
+        ? deriveTerrainMesh(primaryTerrain)
+        : undefined
+      terrainMesh = terrainResult?.ok ? terrainResult.mesh : undefined
+    }
     const parcel = parcelEntities[0]?.geometry
     synchronizeEntityViews(scene, parcelViews, parcelEntities, createParcelView)
     synchronizeEntityViews(
@@ -465,6 +518,23 @@ export function createYardScene(
       primitiveEntities,
       createPrimitiveView,
     )
+    synchronizeEntityViews(
+      scene,
+      plantingBedViews,
+      plantingBedEntities,
+      (entity) => createPlantingBedView(entity, elevationAt),
+    )
+    synchronizeEntityViews(
+      scene,
+      irrigationZoneViews,
+      irrigationZoneEntities,
+      (entity) => createIrrigationZoneView(entity, elevationAt),
+    )
+    synchronizeEntityViews(scene, plantViews, plantEntities, createPlantView)
+    if (terrainProjectionChanged) {
+      plantingBedViews.forEach((entry) => entry.view.update(entry.entity))
+      irrigationZoneViews.forEach((entry) => entry.view.update(entry.entity))
+    }
     primitiveViews.forEach(({ view }, entityId) => {
       view.setSelected(entityId === selectedEntityId)
     })
@@ -762,6 +832,12 @@ export function createYardScene(
       terrainViews.clear()
       primitiveViews.forEach(({ view }) => view.dispose())
       primitiveViews.clear()
+      plantingBedViews.forEach(({ view }) => view.dispose())
+      plantingBedViews.clear()
+      irrigationZoneViews.forEach(({ view }) => view.dispose())
+      irrigationZoneViews.clear()
+      plantViews.forEach(({ view }) => view.dispose())
+      plantViews.clear()
       probeMarkerGeometry.dispose()
       probeMarkerMaterial.dispose()
       probeNormal.line.geometry.dispose()

@@ -38,6 +38,8 @@ for foliage distance; it is not root geometry or a growth model. Editing and
 rendering for these entities, and the evidence-aware interaction-rule evaluator,
 remain separate Milestone 11 increments.
 
-Surface cover intentionally lives with soil metadata for a compact editing model,
-but it does not determine solar transmissivity or visual material settings. Those
-remain separate projections and physical properties.
+Surface cover intentionally lives with soil metadata for a compact editing model.
+The scene view maps its values to a restrained color palette and drapes bed and
+irrigation footprints over the derived terrain. At a retaining-wall boundary, the
+upper terrain surface is used. These are view projections: surface cover does not
+determine solar transmissivity or store Three.js material settings.
