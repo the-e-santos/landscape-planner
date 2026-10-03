@@ -79,6 +79,8 @@ export interface SolarCalculationProgress {
   readonly scaleMaximum?: number
   readonly dirtyTileCount?: number
   readonly totalTileCount?: number
+  readonly computeBackend?: 'cpu' | 'webgpu'
+  readonly fallbackReason?: string
   readonly message: string
 }
 

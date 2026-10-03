@@ -85,6 +85,30 @@ describe('WebGPU visibility executor boundary', () => {
     expect(onFallback).toHaveBeenCalledWith(
       expect.stringContaining('device lost'),
     )
+
+  })
+
+  it('latches onto CPU after the first runtime failure', async () => {
+    const scene = packGpuSceneGeometry([entity])
+    const batch = packVisibilityRayBatch(scene, [{
+      ray: {
+        origin: { x: 0, y: 0, z: 0 },
+        direction: { x: 0, y: 1, z: 0 },
+      },
+    }])
+    const execute = vi.fn(async () => {
+      throw new Error('device lost')
+    })
+    const executor = withCpuVisibilityFallback({
+      backend: 'webgpu',
+      execute,
+    })
+
+    await executor.execute(scene, batch)
+    const second = await executor.execute(scene, batch)
+    expect(second.backend).toBe('cpu')
+    expect(second.fallbackReason).toBe('device lost')
+    expect(execute).toHaveBeenCalledOnce()
   })
 
   it('returns successful primary results without invoking fallback', async () => {

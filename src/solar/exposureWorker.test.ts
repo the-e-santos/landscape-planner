@@ -2,9 +2,14 @@ import { describe, expect, it } from 'vitest'
 import { createRectangleVertices } from '../domain/parcel'
 import { createDefaultProject, getTerrainEntity } from '../domain/project'
 import { DEFAULT_TERRAIN_ID } from '../domain/terrain'
-import { computeExposureWorkerRequest } from './exposureWorker'
+import {
+  computeExposureWorkerRequest,
+  computeExposureWorkerRequestAsync,
+} from './exposureWorker'
 import type { ExposureWorkerRequest } from './exposureWorker'
+import { CPU_VISIBILITY_BATCH_EXECUTOR } from './batchedVisibility'
 import { DEFAULT_SYNTHETIC_CLIMATE } from './syntheticClimate'
+import type { VisibilityBackendRuntime } from './visibilityBackend'
 
 describe('exposure worker computation', () => {
   it('returns cloneable progressive layer data and metadata', () => {
@@ -72,5 +77,83 @@ describe('exposure worker computation', () => {
       expect(reused.surfaceSampleCount).toBe(response.surfaceSampleCount)
       expect(reused.dirtyTileCount).toBe(0)
     }
+  })
+
+  it('routes instantaneous surface exposure through the batch executor', async () => {
+    const project = createDefaultProject()
+    const request: ExposureWorkerRequest = {
+      revision: 9,
+      project,
+      parcel: {
+        vertices: createRectangleVertices(4, 4),
+        uncertaintyMeters: 0,
+      },
+      terrains: [getTerrainEntity(project, DEFAULT_TERRAIN_ID)],
+      primitives: project.entities.filter(
+        (entity) => entity.kind === 'primitive',
+      ),
+      settings: {
+        enabled: true,
+        analysisMode: 'instant',
+        climateParameters: DEFAULT_SYNTHETIC_CLIMATE,
+        skyCondition: 'clear',
+        solarPosition: {
+          date: { year: 2024, month: 6, day: 20 },
+          latitudeRadians: 0.5,
+          localSolarTimeHours: 12,
+        },
+        spacingMeters: 2,
+        displayChannel: 'total',
+      },
+      invalidateAll: true,
+      changedBounds: [],
+      cachedTiles: [],
+      previousTerrainLayers: [],
+      previousPrimitiveLayers: [],
+    }
+    const runtime: VisibilityBackendRuntime = {
+      selection: {
+        backend: 'webgpu',
+        capability: { available: true, reason: 'test device' },
+        fellBackToCpu: false,
+      },
+      executor: {
+        backend: 'webgpu',
+        execute: async (scene, batch) => ({
+          ...await CPU_VISIBILITY_BATCH_EXECUTOR.execute(scene, batch),
+          backend: 'webgpu',
+        }),
+      },
+    }
+    const reference = computeExposureWorkerRequest(request)
+    const accelerated = await computeExposureWorkerRequestAsync(request, runtime)
+
+    expect(reference.ok).toBe(true)
+    expect(accelerated.ok).toBe(true)
+    if (!reference.ok || !accelerated.ok) return
+    expect(reference.computeBackend).toBe('cpu')
+    expect(accelerated.computeBackend).toBe('webgpu')
+    const referenceValues = [
+      ...reference.terrainLayers.flatMap(([, layer]) =>
+        layer.vertices.map(({ exposure }) => exposure)
+      ),
+      ...reference.primitiveLayers.flatMap(([, layer]) =>
+        layer.vertices.map(({ exposure }) => exposure)
+      ),
+    ]
+    const acceleratedValues = [
+      ...accelerated.terrainLayers.flatMap(([, layer]) =>
+        layer.vertices.map(({ exposure }) => exposure)
+      ),
+      ...accelerated.primitiveLayers.flatMap(([, layer]) =>
+        layer.vertices.map(({ exposure }) => exposure)
+      ),
+    ]
+    expect(acceleratedValues).toHaveLength(referenceValues.length)
+    acceleratedValues.forEach((value, index) => {
+      expect(value.direct).toBeCloseTo(referenceValues[index].direct, 4)
+      expect(value.diffuse).toBeCloseTo(referenceValues[index].diffuse, 4)
+      expect(value.total).toBeCloseTo(referenceValues[index].total, 4)
+    })
   })
 })

@@ -39,6 +39,11 @@ the correctness reference for accelerated implementations.
 - Centralize adapter/device acquisition in a runtime factory that reports the
   initial backend, capability reason, fallback state, and available adapter
   metadata without probing when CPU is explicitly selected.
+- Route instantaneous surface exposure through the asynchronous executor in
+  bounded batches of direct-sun and diffuse-sky rays. Preserve progressive tile
+  reuse, surface self-exclusion, and separate direct/diffuse result channels.
+  Accumulated exposure remains on the existing CPU evaluator until its weighted
+  directions are exposed through the same batching boundary.
 - Continue comparing accelerated results with the CPU reference using
   deterministic and seeded-random differential fixtures.
 
@@ -48,4 +53,7 @@ Every solar-analysis feature must remain correct on CPU, although large refined
 analyses may take longer. GPU-specific code cannot become the only implementation
 of a physical calculation. WebGPU uses 32-bit arithmetic and a bounded iterative
 BVH stack, so explicit CPU-versus-GPU tolerances and representative-scene
-benchmarks remain required before routing application exposure work through it.
+benchmarks remain required before expanding it to accumulated exposure or using
+measurements to choose automatic quality defaults.
+The worker reports the backend that actually completed each result and retains
+the synchronous CPU path on systems without a hardware WebGPU adapter.

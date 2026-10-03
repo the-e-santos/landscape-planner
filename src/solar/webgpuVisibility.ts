@@ -298,13 +298,18 @@ export function withCpuVisibilityFallback(
   primary: VisibilityBatchExecutor,
   onFallback?: (reason: string) => void,
 ): VisibilityBatchExecutor {
+  let fallbackReason: string | undefined
   return {
     backend: primary.backend,
     execute: async (scene, batch): Promise<PackedVisibilityBatchResult> => {
+      if (fallbackReason) {
+        const result = await CPU_VISIBILITY_BATCH_EXECUTOR.execute(scene, batch)
+        return { ...result, fallbackReason }
+      }
       try {
         return await primary.execute(scene, batch)
       } catch (error) {
-        const fallbackReason = messageOf(error)
+        fallbackReason = messageOf(error)
         onFallback?.(fallbackReason)
         const result = await CPU_VISIBILITY_BATCH_EXECUTOR.execute(scene, batch)
         return { ...result, fallbackReason }

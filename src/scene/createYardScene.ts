@@ -370,8 +370,14 @@ export function createYardScene(
           scaleMaximum: data.scaleMaximum,
           dirtyTileCount: data.dirtyTileCount,
           totalTileCount: data.exposureTiles.length,
+          computeBackend: data.computeBackend,
+          ...(data.fallbackReason
+            ? { fallbackReason: data.fallbackReason }
+            : {}),
           message: complete
-            ? 'Exposure calculation complete.'
+            ? data.fallbackReason
+              ? 'Exposure complete on CPU after WebGPU fallback.'
+              : `Exposure calculation complete (${data.computeBackend}).`
             : 'Preview ready; scheduling finer result.',
         })
         if (!complete) {

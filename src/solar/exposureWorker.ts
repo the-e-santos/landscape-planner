@@ -13,8 +13,11 @@ import {
 } from './terrainExposure'
 import {
   prepareSurfaceExposure,
+  type PreparedSurfaceExposure,
   type SolarHeatmapSettings,
 } from './exposureSettings'
+import { evaluateInstantExposureBatch } from './instantExposureBatch'
+import type { SurfacePoint } from './pointSolar'
 import {
   conservativelyInvalidatedTileIds,
   createExposureTiles,
@@ -22,6 +25,10 @@ import {
   type Bounds3,
   type ExposureTile,
 } from './tileInvalidation'
+import {
+  createVisibilityBackendRuntime,
+  type VisibilityBackendRuntime,
+} from './visibilityBackend'
 
 type EnabledSettings = Extract<SolarHeatmapSettings, { readonly enabled: true }>
 
@@ -53,6 +60,8 @@ export type ExposureWorkerResponse =
       readonly temporalSampleCount: number
       readonly unit: 'W/m²' | 'kWh/m²'
       readonly scaleMaximum: number
+      readonly computeBackend: 'cpu' | 'webgpu'
+      readonly fallbackReason?: string
     }
   | {
       readonly ok: false
@@ -65,11 +74,10 @@ const workerScope = globalThis as unknown as {
   postMessage(message: ExposureWorkerResponse): void
 }
 
-export function computeExposureWorkerRequest(
+function computeExposureWorkerRequestWithPrepared(
   data: ExposureWorkerRequest,
+  prepared: PreparedSurfaceExposure,
 ): ExposureWorkerResponse {
-  try {
-    const prepared = prepareSurfaceExposure(data.project, data.settings)
     const dirtyTileIds = data.invalidateAll || data.cachedTiles.length === 0
       ? null
       : conservativelyInvalidatedTileIds(
@@ -160,20 +168,116 @@ export function computeExposureWorkerRequest(
       temporalSampleCount: prepared.temporalSampleCount,
       unit: prepared.unit,
       scaleMaximum: prepared.scaleMaximum,
+      computeBackend: 'cpu',
+    }
+}
+
+function failedResponse(
+  data: ExposureWorkerRequest,
+  error: unknown,
+): ExposureWorkerResponse {
+  return {
+    ok: false,
+    revision: data.revision,
+    message: error instanceof Error
+      ? error.message
+      : 'Exposure calculation failed.',
+  }
+}
+
+export function computeExposureWorkerRequest(
+  data: ExposureWorkerRequest,
+): ExposureWorkerResponse {
+  try {
+    return computeExposureWorkerRequestWithPrepared(
+      data,
+      prepareSurfaceExposure(data.project, data.settings),
+    )
+  } catch (error) {
+    return failedResponse(data, error)
+  }
+}
+
+interface MutableExposureValues {
+  direct: number
+  diffuse: number
+  total: number
+}
+
+export async function computeExposureWorkerRequestAsync(
+  data: ExposureWorkerRequest,
+  runtimeOverride?: VisibilityBackendRuntime,
+): Promise<ExposureWorkerResponse> {
+  try {
+    if (data.settings.analysisMode !== 'instant') {
+      return computeExposureWorkerRequest(data)
+    }
+    const runtime = runtimeOverride ??
+      await createVisibilityBackendRuntime('auto')
+    if (runtime.selection.backend === 'cpu') {
+      return computeExposureWorkerRequest(data)
+    }
+
+    const prepared = prepareSurfaceExposure(data.project, data.settings)
+    const pending: Array<{
+      readonly surface: SurfacePoint
+      readonly exposure: MutableExposureValues
+    }> = []
+    const recordingPrepared: PreparedSurfaceExposure = {
+      ...prepared,
+      evaluate: (surface) => {
+        const exposure = { direct: 0, diffuse: 0, total: 0 }
+        pending.push({ surface, exposure })
+        return exposure
+      },
+    }
+    const response = computeExposureWorkerRequestWithPrepared(
+      data,
+      recordingPrepared,
+    )
+    if (!response.ok) return response
+
+    const batch = await evaluateInstantExposureBatch(
+      data.project,
+      data.settings,
+      pending.map(({ surface }) => surface),
+      runtime.executor,
+    )
+    pending.forEach(({ exposure }, index) => {
+      const value = batch.values[index]
+      exposure.direct = value.direct
+      exposure.diffuse = value.diffuse
+      exposure.total = value.total
+    })
+    const terrainLayers = response.terrainLayers.map(([entityId, layer]) => {
+      let minimumValue = Number.POSITIVE_INFINITY
+      let maximumValue = Number.NEGATIVE_INFINITY
+      layer.vertices.forEach(({ exposure }) => {
+        const value = exposure[data.settings.displayChannel]
+        minimumValue = Math.min(minimumValue, value)
+        maximumValue = Math.max(maximumValue, value)
+      })
+      return [entityId, {
+        ...layer,
+        minimumValue,
+        maximumValue,
+      }] as const
+    })
+    return {
+      ...response,
+      terrainLayers,
+      computeBackend: batch.backend,
+      ...(batch.fallbackReason
+        ? { fallbackReason: batch.fallbackReason }
+        : {}),
     }
   } catch (error) {
-    return {
-      ok: false,
-      revision: data.revision,
-      message: error instanceof Error
-        ? error.message
-        : 'Exposure calculation failed.',
-    }
+    return failedResponse(data, error)
   }
 }
 
 if (typeof workerScope.postMessage === 'function') {
-  workerScope.onmessage = ({ data }) => {
-    workerScope.postMessage(computeExposureWorkerRequest(data))
+  workerScope.onmessage = async ({ data }) => {
+    workerScope.postMessage(await computeExposureWorkerRequestAsync(data))
   }
 }
