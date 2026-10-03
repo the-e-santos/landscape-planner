@@ -13,6 +13,11 @@ export const NO_EXCLUDED_PRIMITIVE = 0xffffffff
 export const NO_BLOCKING_PRIMITIVE = 0xffffffff
 
 const RAY_EPSILON_METERS = 1e-6
+// Local aliases keep benchmark hot loops independent of transformed ESM getters.
+const PACKED_PRIMITIVE_KIND = GPU_PRIMITIVE_KIND
+const PACKED_PRIMITIVE_PARAMETER_STRIDE = GPU_PRIMITIVE_PARAMETER_STRIDE
+const PACKED_PRIMITIVE_TRANSFORM_STRIDE = GPU_PRIMITIVE_TRANSFORM_STRIDE
+const queryPackedBvhCandidates = queryGpuBvhCandidates
 
 export interface VisibilityRayRequest {
   readonly ray: Ray
@@ -96,7 +101,7 @@ function toLocalRay(
   primitiveIndex: number,
   ray: Ray,
 ): Ray {
-  const offset = primitiveIndex * GPU_PRIMITIVE_TRANSFORM_STRIDE
+  const offset = primitiveIndex * PACKED_PRIMITIVE_TRANSFORM_STRIDE
   const transform = scene.primitiveTransforms
   const x = ray.origin.x - transform[offset]
   const y = ray.origin.y - transform[offset + 1]
@@ -282,29 +287,29 @@ export function intersectPackedPrimitive(
   ray: Ray,
 ): number | undefined {
   const localRay = toLocalRay(scene, primitiveIndex, ray)
-  const offset = primitiveIndex * GPU_PRIMITIVE_PARAMETER_STRIDE
+  const offset = primitiveIndex * PACKED_PRIMITIVE_PARAMETER_STRIDE
   const parameters = scene.primitiveParameters
   switch (scene.primitiveKinds[primitiveIndex]) {
-    case GPU_PRIMITIVE_KIND.box:
-    case GPU_PRIMITIVE_KIND.wall:
+    case PACKED_PRIMITIVE_KIND.box:
+    case PACKED_PRIMITIVE_KIND.wall:
       return intersectBox(localRay, {
         x: parameters[offset],
         y: parameters[offset + 1],
         z: parameters[offset + 2],
       })
-    case GPU_PRIMITIVE_KIND.cylinder:
+    case PACKED_PRIMITIVE_KIND.cylinder:
       return intersectCylinder(
         localRay,
         parameters[offset],
         parameters[offset + 1],
       )
-    case GPU_PRIMITIVE_KIND.canopy:
+    case PACKED_PRIMITIVE_KIND.canopy:
       return intersectEllipsoid(localRay, {
         x: parameters[offset],
         y: parameters[offset + 1],
         z: parameters[offset + 2],
       })
-    case GPU_PRIMITIVE_KIND.polygonExtrusion:
+    case PACKED_PRIMITIVE_KIND.polygonExtrusion:
       return intersectPolygonExtrusion(
         scene,
         primitiveIndex,
@@ -335,7 +340,7 @@ export function tracePackedVisibilityBatch(
   for (let rayIndex = 0; rayIndex < rayCount; rayIndex += 1) {
     const ray = rayAt(batch, rayIndex)
     const excluded = batch.excludedPrimitiveIndices[rayIndex]
-    const intersections = queryGpuBvhCandidates(scene, ray)
+    const intersections = queryPackedBvhCandidates(scene, ray)
       .filter((primitiveIndex) => primitiveIndex !== excluded)
       .flatMap((primitiveIndex) => {
         const distance = intersectPackedPrimitive(scene, primitiveIndex, ray)

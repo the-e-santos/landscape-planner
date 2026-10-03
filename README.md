@@ -34,10 +34,14 @@ npm.cmd test
 npm.cmd run build
 ```
 
+The opt-in deterministic visibility benchmark suite is documented in
+[Visibility benchmarks](docs/BENCHMARKS.md).
+
 ## Documentation
 
 - [Foundational project plan](docs/PROJECT_PLAN.md)
 - [Solar analysis guide](docs/SOLAR_ANALYSIS.md)
+- [Visibility benchmarks](docs/BENCHMARKS.md)
 - [Coordinate and unit conventions](docs/COORDINATES.md)
 - [Architecture decisions](docs/decisions/)
 
@@ -48,7 +52,8 @@ horticultural interpretation, and current limitations.
 ## Current status
 
 Milestones 1–11 are complete. Milestone 12 WebGPU acceleration is in progress,
-beginning with a GPU-ready scene/BVH format and capability-aware CPU fallback.
+with GPU-ready scene/BVH buffers, application-level compute routing, safe CPU
+fallback, differential validation, and representative visibility benchmarks.
 
 See [docs/PROJECT_PLAN.md](docs/PROJECT_PLAN.md) for the ordered roadmap and
 deferred scope.

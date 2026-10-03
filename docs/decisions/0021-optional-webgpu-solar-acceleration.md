@@ -48,6 +48,10 @@ the correctness reference for accelerated implementations.
   direction preparation.
 - Continue comparing accelerated results with the CPU reference using
   deterministic and seeded-random differential fixtures.
+- Keep representative scene and quality-tier benchmarks deterministic and
+  opt-in. Record workload sizes, packed-memory estimates, backend, environment,
+  timing, throughput, fallback, and reference disagreement without putting
+  hardware-specific timing thresholds in the normal test suite.
 
 ## Consequences
 
