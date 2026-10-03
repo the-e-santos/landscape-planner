@@ -5,12 +5,14 @@ import {
   type VisibilityBatchExecutor,
   type VisibilityRayRequest,
 } from './batchedVisibility'
-import type { ExposureValues, SolarHeatmapSettings } from './exposureSettings'
+import {
+  prepareSurfaceExposure,
+  type ExposureValues,
+  type PreparedSurfaceExposure,
+  type SolarHeatmapSettings,
+} from './exposureSettings'
 import { packGpuSceneGeometry } from './gpuScene'
 import type { SurfacePoint } from './pointSolar'
-import { calculateSolarPosition } from './solarPosition'
-import { TREGENZA_SKY_PATCHES } from './skyPatches'
-import { createSyntheticClimateModel } from './syntheticClimate'
 
 type InstantSettings = Extract<
   SolarHeatmapSettings,
@@ -29,7 +31,7 @@ interface RayContribution {
   readonly unoccludedValue: number
 }
 
-export interface InstantExposureBatchResult {
+export interface SurfaceExposureBatchResult {
   readonly values: readonly ExposureValues[]
   readonly backend: 'cpu' | 'webgpu'
   readonly fallbackReason?: string
@@ -58,44 +60,16 @@ function normalizedSurfaceNormal(surface: SurfacePoint): {
   }
 }
 
-export async function evaluateInstantExposureBatch(
+export async function evaluatePreparedExposureBatch(
   project: LandscapeProject,
-  settings: InstantSettings,
+  prepared: PreparedSurfaceExposure,
   surfaces: readonly SurfacePoint[],
   executor: VisibilityBatchExecutor,
   maximumRaysPerBatch = DEFAULT_VISIBILITY_BATCH_RAY_LIMIT,
-): Promise<InstantExposureBatchResult> {
+): Promise<SurfaceExposureBatchResult> {
   if (!Number.isInteger(maximumRaysPerBatch) || maximumRaysPerBatch <= 0) {
     throw new Error('Visibility batch ray limit must be a positive integer')
   }
-  const climate = createSyntheticClimateModel(settings.climateParameters)
-  const solarPosition = calculateSolarPosition(settings.solarPosition)
-  const instant = {
-    ...settings.solarPosition,
-    skyCondition: settings.skyCondition,
-  }
-  const dni = climate.getDirectNormalIrradiance(instant)
-  const rotation = project.coordinates.northRotationRadians
-  const cosRotation = Math.cos(rotation)
-  const sinRotation = Math.sin(rotation)
-  const cosAltitude = Math.cos(solarPosition.altitudeRadians)
-  const relativeAzimuth = solarPosition.azimuthRadians - rotation
-  const directDirection = {
-    x: Math.sin(relativeAzimuth) * cosAltitude,
-    y: Math.sin(solarPosition.altitudeRadians),
-    z: -Math.cos(relativeAzimuth) * cosAltitude,
-  }
-  const diffuseDirections = TREGENZA_SKY_PATCHES.map((patch) => ({
-    direction: {
-      x: patch.direction.east * cosRotation -
-        patch.direction.north * sinRotation,
-      y: patch.direction.up,
-      z: -(patch.direction.east * sinRotation +
-        patch.direction.north * cosRotation),
-    },
-    weight: climate.getSkyRadiance(instant, patch) *
-      patch.solidAngleSteradians,
-  }))
   const primitives = project.entities.filter(
     (entity): entity is PrimitiveEntity => entity.kind === 'primitive',
   )
@@ -144,32 +118,19 @@ export async function evaluateInstantExposureBatch(
       y: surface.elevationMeters,
       z: -surface.northMeters,
     }
-    if (solarPosition.aboveHorizon && dni > 0) {
-      const incidence = Math.max(
-        0,
-        normal.x * directDirection.x +
-          normal.y * directDirection.y +
-          normal.z * directDirection.z,
-      )
-      if (incidence > 0) {
-        if (addRay({
-          ray: { origin, direction: directDirection },
-          ...(surface.owningEntityId
-            ? { excludedEntityId: surface.owningEntityId }
-            : {}),
-        }, {
-          surfaceIndex,
-          channel: 'direct',
-          unoccludedValue: dni * incidence,
-        })) await flush()
+    for (const weighted of prepared.visibilityDirections) {
+      const direction = {
+        x: weighted.direction.east,
+        y: weighted.direction.up,
+        z: -weighted.direction.north,
       }
-    }
-    for (const { direction, weight } of diffuseDirections) {
       const incidence = Math.max(
         0,
-        normal.x * direction.x + normal.y * direction.y + normal.z * direction.z,
+        normal.x * direction.x +
+          normal.y * direction.y +
+          normal.z * direction.z,
       )
-      if (incidence === 0 || weight === 0) continue
+      if (incidence === 0 || weighted.weight === 0) continue
       if (addRay({
         ray: { origin, direction },
         ...(surface.owningEntityId
@@ -177,8 +138,8 @@ export async function evaluateInstantExposureBatch(
           : {}),
       }, {
         surfaceIndex,
-        channel: 'diffuse',
-        unoccludedValue: weight * incidence,
+        channel: weighted.channel,
+        unoccludedValue: weighted.weight * incidence,
       })) await flush()
     }
   }
@@ -190,4 +151,20 @@ export async function evaluateInstantExposureBatch(
     ...(fallbackReason ? { fallbackReason } : {}),
     rayCount,
   }
+}
+
+export function evaluateInstantExposureBatch(
+  project: LandscapeProject,
+  settings: InstantSettings,
+  surfaces: readonly SurfacePoint[],
+  executor: VisibilityBatchExecutor,
+  maximumRaysPerBatch = DEFAULT_VISIBILITY_BATCH_RAY_LIMIT,
+): Promise<SurfaceExposureBatchResult> {
+  return evaluatePreparedExposureBatch(
+    project,
+    prepareSurfaceExposure(project, settings),
+    surfaces,
+    executor,
+    maximumRaysPerBatch,
+  )
 }

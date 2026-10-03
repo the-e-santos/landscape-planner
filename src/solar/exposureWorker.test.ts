@@ -11,8 +11,25 @@ import { CPU_VISIBILITY_BATCH_EXECUTOR } from './batchedVisibility'
 import { DEFAULT_SYNTHETIC_CLIMATE } from './syntheticClimate'
 import type { VisibilityBackendRuntime } from './visibilityBackend'
 
+function webGpuLikeRuntime(): VisibilityBackendRuntime {
+  return {
+    selection: {
+      backend: 'webgpu',
+      capability: { available: true, reason: 'test device' },
+      fellBackToCpu: false,
+    },
+    executor: {
+      backend: 'webgpu',
+      execute: async (scene, batch) => ({
+        ...await CPU_VISIBILITY_BATCH_EXECUTOR.execute(scene, batch),
+        backend: 'webgpu',
+      }),
+    },
+  }
+}
+
 describe('exposure worker computation', () => {
-  it('returns cloneable progressive layer data and metadata', () => {
+  it('returns cloneable progressive layer data and metadata', async () => {
     const project = createDefaultProject()
     const request: ExposureWorkerRequest = {
       revision: 7,
@@ -63,6 +80,20 @@ describe('exposure worker computation', () => {
     expect(response.exposureTiles.length).toBeGreaterThan(0)
     expect(() => structuredClone(response)).not.toThrow()
 
+    const accelerated = await computeExposureWorkerRequestAsync(
+      request,
+      webGpuLikeRuntime(),
+    )
+    expect(accelerated.ok).toBe(true)
+    if (accelerated.ok) {
+      expect(accelerated.computeBackend).toBe('webgpu')
+      const expected = response.terrainLayers[0][1].vertices[0].exposure
+      const actual = accelerated.terrainLayers[0][1].vertices[0].exposure
+      expect(actual.direct).toBeCloseTo(expected.direct, 5)
+      expect(actual.diffuse).toBeCloseTo(expected.diffuse, 5)
+      expect(actual.total).toBeCloseTo(expected.total, 5)
+    }
+
     const reused = computeExposureWorkerRequest({
       ...request,
       revision: 8,
@@ -111,22 +142,11 @@ describe('exposure worker computation', () => {
       previousTerrainLayers: [],
       previousPrimitiveLayers: [],
     }
-    const runtime: VisibilityBackendRuntime = {
-      selection: {
-        backend: 'webgpu',
-        capability: { available: true, reason: 'test device' },
-        fellBackToCpu: false,
-      },
-      executor: {
-        backend: 'webgpu',
-        execute: async (scene, batch) => ({
-          ...await CPU_VISIBILITY_BATCH_EXECUTOR.execute(scene, batch),
-          backend: 'webgpu',
-        }),
-      },
-    }
     const reference = computeExposureWorkerRequest(request)
-    const accelerated = await computeExposureWorkerRequestAsync(request, runtime)
+    const accelerated = await computeExposureWorkerRequestAsync(
+      request,
+      webGpuLikeRuntime(),
+    )
 
     expect(reference.ok).toBe(true)
     expect(accelerated.ok).toBe(true)

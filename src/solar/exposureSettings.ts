@@ -58,6 +58,17 @@ export interface PreparedSurfaceExposure {
   readonly scaleMaximum: number
   readonly directionCount: number
   readonly temporalSampleCount: number
+  readonly visibilityDirections: readonly {
+    readonly channel: 'direct' | 'diffuse'
+    /** Unit illumination direction in local east/up/north coordinates. */
+    readonly direction: {
+      readonly east: number
+      readonly up: number
+      readonly north: number
+    }
+    /** Irradiance or radiant-exposure contribution before incidence/visibility. */
+    readonly weight: number
+  }[]
   /** Unit illumination directions in local east/up/north coordinates. */
   readonly illuminationDirections: readonly {
     readonly east: number
@@ -125,9 +136,20 @@ export function prepareSurfaceExposure(
       north: Math.cos(solarPosition.azimuthRadians) * cosAltitude,
     }
     const trueDirections = [
-      ...(solarPosition.aboveHorizon && dni > 0 ? [directDirection] : []),
-      ...(dhi > 0 ? TREGENZA_SKY_PATCHES.map(({ direction }) => direction) : []),
+      ...(solarPosition.aboveHorizon && dni > 0
+        ? [{ channel: 'direct' as const, direction: directDirection, weight: dni }]
+        : []),
+      ...(dhi > 0 ? TREGENZA_SKY_PATCHES.map((patch) => ({
+        channel: 'diffuse' as const,
+        direction: patch.direction,
+        weight: climate.getSkyRadiance(instant, patch) *
+          patch.solidAngleSteradians,
+      })) : []),
     ]
+    const visibilityDirections = trueDirections.map((direction) => ({
+      ...direction,
+      direction: toLocalDirection(direction.direction),
+    }))
     return {
       evaluate: (surface) => {
         const direct = evaluateDirect(surface).directIrradianceWattsPerSquareMeter
@@ -143,7 +165,10 @@ export function prepareSurfaceExposure(
           : dni + dhi,
       directionCount: trueDirections.length,
       temporalSampleCount: 1,
-      illuminationDirections: trueDirections.map(toLocalDirection),
+      visibilityDirections,
+      illuminationDirections: visibilityDirections.map(({ direction }) =>
+        direction
+      ),
     }
   }
 
@@ -159,11 +184,24 @@ export function prepareSurfaceExposure(
     .filter(({ radianceExposureKilowattHoursPerSquareMeterSteradian }) =>
       radianceExposureKilowattHoursPerSquareMeterSteradian > 0
     )
-    .map(({ direction }) => direction)
+    .map((patch) => ({
+      channel: 'diffuse' as const,
+      direction: patch.direction,
+      weight: patch.radianceExposureKilowattHoursPerSquareMeterSteradian *
+        patch.solidAngleSteradians,
+    }))
   const trueDirections = [
-    ...directionSet.directions.map(({ direction }) => direction),
+    ...directionSet.directions.map((direction) => ({
+      channel: 'direct' as const,
+      direction: direction.direction,
+      weight: direction.weightKilowattHoursPerSquareMeter,
+    })),
     ...diffuseDirections,
   ]
+  const visibilityDirections = trueDirections.map((direction) => ({
+    ...direction,
+    direction: toLocalDirection(direction.direction),
+  }))
 
   return {
     evaluate: (surface) => {
@@ -182,6 +220,9 @@ export function prepareSurfaceExposure(
           integratedSky.expectedDiffuseHorizontalExposureKilowattHoursPerSquareMeter,
     directionCount: trueDirections.length,
     temporalSampleCount: integratedSky.temporalSampleCount,
-    illuminationDirections: trueDirections.map(toLocalDirection),
+    visibilityDirections,
+    illuminationDirections: visibilityDirections.map(({ direction }) =>
+      direction
+    ),
   }
 }

@@ -5,7 +5,10 @@ import {
   type VisibilityBatchExecutor,
 } from './batchedVisibility'
 import { prepareSurfaceExposure } from './exposureSettings'
-import { evaluateInstantExposureBatch } from './instantExposureBatch'
+import {
+  evaluateInstantExposureBatch,
+  evaluatePreparedExposureBatch,
+} from './instantExposureBatch'
 import type { SurfacePoint } from './pointSolar'
 import { DEFAULT_SYNTHETIC_CLIMATE } from './syntheticClimate'
 
@@ -92,5 +95,44 @@ describe('instantaneous batched exposure', () => {
       CPU_VISIBILITY_BATCH_EXECUTOR,
       0,
     )).rejects.toThrow('positive integer')
+  })
+
+  it('matches accumulated clustered-direct and integrated-sky channels', async () => {
+    const project = createDefaultProject()
+    const accumulatedSettings = {
+      enabled: true,
+      analysisMode: 'accumulated',
+      climateParameters: DEFAULT_SYNTHETIC_CLIMATE,
+      period: {
+        startDate: { year: 2024, month: 6, day: 20 },
+        endDate: { year: 2024, month: 6, day: 21 },
+        latitudeRadians: 0.5,
+        timeStepMinutes: 120,
+        overcastProbabilityCurve: [
+          { localSolarTimeHours: 0, probability: 0.25 },
+          { localSolarTimeHours: 24, probability: 0.25 },
+        ],
+      },
+      maximumDirections: 12,
+      spacingMeters: 1,
+      displayChannel: 'total',
+    } as const
+    const prepared = prepareSurfaceExposure(project, accumulatedSettings)
+    const result = await evaluatePreparedExposureBatch(
+      project,
+      prepared,
+      surfaces,
+      CPU_VISIBILITY_BATCH_EXECUTOR,
+      13,
+    )
+
+    expect(prepared.quantity).toBe('radiantExposure')
+    expect(result.rayCount).toBeGreaterThan(13)
+    result.values.forEach((value, index) => {
+      const expected = prepared.evaluate(surfaces[index])
+      expect(value.direct).toBeCloseTo(expected.direct, 5)
+      expect(value.diffuse).toBeCloseTo(expected.diffuse, 5)
+      expect(value.total).toBeCloseTo(expected.total, 5)
+    })
   })
 })

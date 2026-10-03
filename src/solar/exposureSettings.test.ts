@@ -25,6 +25,12 @@ describe('surface exposure preparation', () => {
       directionCount: 146,
       temporalSampleCount: 1,
     })
+    expect(prepared.visibilityDirections).toHaveLength(
+      prepared.directionCount,
+    )
+    expect(prepared.visibilityDirections.filter(
+      ({ channel }) => channel === 'diffuse',
+    )).toHaveLength(145)
   })
 
   it('reports accumulated exposure provenance separately from irradiance', () => {
@@ -60,5 +66,12 @@ describe('surface exposure preparation', () => {
     })
     expect(exposure.diffuse).toBeGreaterThan(0)
     expect(exposure.total).toBeCloseTo(exposure.direct + exposure.diffuse, 12)
+    expect(prepared.visibilityDirections).toHaveLength(
+      prepared.directionCount,
+    )
+    expect(prepared.visibilityDirections
+      .filter(({ channel }) => channel === 'direct')
+      .reduce((sum, { weight }) => sum + weight, 0))
+      .toBeCloseTo(prepared.scaleMaximum, 12)
   })
 })

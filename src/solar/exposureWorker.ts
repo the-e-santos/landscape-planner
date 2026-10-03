@@ -16,7 +16,7 @@ import {
   type PreparedSurfaceExposure,
   type SolarHeatmapSettings,
 } from './exposureSettings'
-import { evaluateInstantExposureBatch } from './instantExposureBatch'
+import { evaluatePreparedExposureBatch } from './instantExposureBatch'
 import type { SurfacePoint } from './pointSolar'
 import {
   conservativelyInvalidatedTileIds,
@@ -209,9 +209,6 @@ export async function computeExposureWorkerRequestAsync(
   runtimeOverride?: VisibilityBackendRuntime,
 ): Promise<ExposureWorkerResponse> {
   try {
-    if (data.settings.analysisMode !== 'instant') {
-      return computeExposureWorkerRequest(data)
-    }
     const runtime = runtimeOverride ??
       await createVisibilityBackendRuntime('auto')
     if (runtime.selection.backend === 'cpu') {
@@ -237,9 +234,9 @@ export async function computeExposureWorkerRequestAsync(
     )
     if (!response.ok) return response
 
-    const batch = await evaluateInstantExposureBatch(
+    const batch = await evaluatePreparedExposureBatch(
       data.project,
-      data.settings,
+      prepared,
       pending.map(({ surface }) => surface),
       runtime.executor,
     )

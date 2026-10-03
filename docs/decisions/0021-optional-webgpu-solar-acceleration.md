@@ -42,8 +42,10 @@ the correctness reference for accelerated implementations.
 - Route instantaneous surface exposure through the asynchronous executor in
   bounded batches of direct-sun and diffuse-sky rays. Preserve progressive tile
   reuse, surface self-exclusion, and separate direct/diffuse result channels.
-  Accumulated exposure remains on the existing CPU evaluator until its weighted
-  directions are exposed through the same batching boundary.
+- Expose weighted visibility directions from the common preparation step so
+  accumulated clustered-direct energy and temporally integrated diffuse-sky
+  energy use the same bounded batching path without duplicating climate or
+  direction preparation.
 - Continue comparing accelerated results with the CPU reference using
   deterministic and seeded-random differential fixtures.
 
@@ -53,7 +55,7 @@ Every solar-analysis feature must remain correct on CPU, although large refined
 analyses may take longer. GPU-specific code cannot become the only implementation
 of a physical calculation. WebGPU uses 32-bit arithmetic and a bounded iterative
 BVH stack, so explicit CPU-versus-GPU tolerances and representative-scene
-benchmarks remain required before expanding it to accumulated exposure or using
-measurements to choose automatic quality defaults.
+benchmarks remain required before using measurements to choose automatic quality
+defaults.
 The worker reports the backend that actually completed each result and retains
 the synchronous CPU path on systems without a hardware WebGPU adapter.
