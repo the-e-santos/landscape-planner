@@ -26,6 +26,9 @@ the correctness reference for accelerated implementations.
   solar-compute capability are detected separately.
 - Pack solar occluders into versioned typed-array buffers with an iterative BVH
   layout suitable for both CPU inspection and GPU storage buffers.
+- Use the same packed ray and result buffers behind an asynchronous batch-executor
+  contract. The CPU executor traverses the packed BVH independently of the
+  original domain-object solver; a WebGPU executor can be substituted later.
 - Continue comparing accelerated results with the CPU reference using
   deterministic and seeded-random differential fixtures.
 
@@ -33,6 +36,6 @@ the correctness reference for accelerated implementations.
 
 Every solar-analysis feature must remain correct on CPU, although large refined
 analyses may take longer. GPU-specific code cannot become the only implementation
-of a physical calculation. The initial packed scene and backend-selection policy
-do not yet execute a compute shader; they establish the boundary for the batched
-kernel and its fallback behavior.
+of a physical calculation. The packed scene, batched CPU executor, and
+backend-selection policy do not yet execute a compute shader; they establish the
+tested boundary for that kernel and its fallback behavior.
