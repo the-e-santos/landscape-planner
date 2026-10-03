@@ -200,24 +200,27 @@ export function packGpuSceneGeometry(
 ): GpuSceneGeometry {
   const polygonVertices: number[] = []
   const primitives: PackedPrimitive[] = []
-  entities.forEach((entity, sourceIndex) => {
-    if (getPrimitiveSolarOptics(entity).mode === 'ignored') return
-    const polygonOffset = polygonVertices.length / 2
-    if (entity.geometry.kind === 'polygonExtrusion') {
-      entity.geometry.footprint.forEach((point) => {
-        polygonVertices.push(point.eastMeters, -point.northMeters)
+  entities
+    .map((entity, sourceIndex) => ({ entity, sourceIndex }))
+    .filter(({ entity }) => getPrimitiveSolarOptics(entity).mode !== 'ignored')
+    .sort((left, right) => left.entity.id.localeCompare(right.entity.id))
+    .forEach(({ entity, sourceIndex }) => {
+      const polygonOffset = polygonVertices.length / 2
+      if (entity.geometry.kind === 'polygonExtrusion') {
+        entity.geometry.footprint.forEach((point) => {
+          polygonVertices.push(point.eastMeters, -point.northMeters)
+        })
+      }
+      primitives.push({
+        entity,
+        sourceIndex,
+        bounds: conservativePrimitiveBounds(entity),
+        polygonOffset,
+        polygonCount: entity.geometry.kind === 'polygonExtrusion'
+          ? entity.geometry.footprint.length
+          : 0,
       })
-    }
-    primitives.push({
-      entity,
-      sourceIndex,
-      bounds: conservativePrimitiveBounds(entity),
-      polygonOffset,
-      polygonCount: entity.geometry.kind === 'polygonExtrusion'
-        ? entity.geometry.footprint.length
-        : 0,
     })
-  })
 
   const transforms: number[] = []
   const parameters: number[] = []

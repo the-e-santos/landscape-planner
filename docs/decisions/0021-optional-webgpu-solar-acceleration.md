@@ -28,7 +28,12 @@ the correctness reference for accelerated implementations.
   layout suitable for both CPU inspection and GPU storage buffers.
 - Use the same packed ray and result buffers behind an asynchronous batch-executor
   contract. The CPU executor traverses the packed BVH independently of the
-  original domain-object solver; a WebGPU executor can be substituted later.
+  original domain-object solver. The WebGPU executor combines those arrays into
+  three storage buffers plus metadata, dispatches one invocation per ray, and
+  reads transmission and blocker results back to the CPU.
+- Wrap WebGPU execution with a runtime CPU fallback. Pipeline compilation,
+  validation, device-loss, dispatch, and readback failures must not make the
+  analysis unavailable.
 - Continue comparing accelerated results with the CPU reference using
   deterministic and seeded-random differential fixtures.
 
@@ -36,6 +41,6 @@ the correctness reference for accelerated implementations.
 
 Every solar-analysis feature must remain correct on CPU, although large refined
 analyses may take longer. GPU-specific code cannot become the only implementation
-of a physical calculation. The packed scene, batched CPU executor, and
-backend-selection policy do not yet execute a compute shader; they establish the
-tested boundary for that kernel and its fallback behavior.
+of a physical calculation. WebGPU uses 32-bit arithmetic and a bounded iterative
+BVH stack, so explicit CPU-versus-GPU tolerances and representative-scene
+benchmarks remain required before routing application exposure work through it.

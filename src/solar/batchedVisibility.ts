@@ -29,6 +29,8 @@ export interface PackedVisibilityRayBatch {
 }
 
 export interface PackedVisibilityBatchResult {
+  readonly backend: SolarComputeBackend
+  readonly fallbackReason?: string
   readonly transmissions: Float32Array
   readonly blockedByPrimitiveIndices: Uint32Array
 }
@@ -356,7 +358,7 @@ export function tracePackedVisibilityBatch(
     }
     transmissions[rayIndex] = transmission
   }
-  return { transmissions, blockedByPrimitiveIndices }
+  return { backend: 'cpu', transmissions, blockedByPrimitiveIndices }
 }
 
 export const CPU_VISIBILITY_BATCH_EXECUTOR: VisibilityBatchExecutor = {
