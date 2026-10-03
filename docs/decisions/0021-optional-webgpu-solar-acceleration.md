@@ -18,7 +18,9 @@ the correctness reference for accelerated implementations.
 
 - Keep the CPU solver as a supported execution backend, not only a test oracle.
 - Treat WebGPU as optional acceleration. `auto` mode selects it only after an
-  adapter is successfully acquired.
+  adapter and device are successfully acquired. Auto mode keeps the CPU backend
+  when the only WebGPU adapter is a software fallback such as SwiftShader;
+  explicitly selecting WebGPU permits software adapters for diagnostics.
 - Fall back to CPU when WebGPU capability detection, initialization, or execution
   fails. A later UI status should show the active backend and fallback reason
   without preventing analysis.
@@ -34,6 +36,9 @@ the correctness reference for accelerated implementations.
 - Wrap WebGPU execution with a runtime CPU fallback. Pipeline compilation,
   validation, device-loss, dispatch, and readback failures must not make the
   analysis unavailable.
+- Centralize adapter/device acquisition in a runtime factory that reports the
+  initial backend, capability reason, fallback state, and available adapter
+  metadata without probing when CPU is explicitly selected.
 - Continue comparing accelerated results with the CPU reference using
   deterministic and seeded-random differential fixtures.
 
