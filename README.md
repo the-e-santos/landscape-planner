@@ -13,7 +13,8 @@ testable numerical kernels, and an understandable architecture.
 Requirements:
 
 - Node.js and npm
-- A current browser with WebGPU support for the preferred rendering path
+- A current browser. WebGPU is preferred, but it is not required: Three.js can
+  render through its WebGL 2 fallback, and solar analysis retains a CPU backend.
 
 From PowerShell:
 
@@ -46,10 +47,8 @@ horticultural interpretation, and current limitations.
 
 ## Current status
 
-Milestones 1–9 are complete. Milestone 10 currently includes the 145-patch
-Tregenza diffuse sky, normalized synthetic clear/overcast climate states,
-time-varying DNI/DHI, accumulated direct and diffuse exposure, surface heatmaps,
-quantitative probes, and horticultural comparison metrics.
+Milestones 1–11 are complete. Milestone 12 WebGPU acceleration is in progress,
+beginning with a GPU-ready scene/BVH format and capability-aware CPU fallback.
 
 See [docs/PROJECT_PLAN.md](docs/PROJECT_PLAN.md) for the ordered roadmap and
 deferred scope.
