@@ -5,9 +5,6 @@ application. It combines an interactive Three.js yard model with quantitative
 direct and diffuse solar-exposure analysis, explicit geometric uncertainty, and
 eventual evidence-aware planting guidance.
 
-The project is a hobby/open-source prototype focused on transparent calculations,
-testable numerical kernels, and an understandable architecture.
-
 ## Run locally
 
 Requirements:
