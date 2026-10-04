@@ -94,6 +94,23 @@ describe('exposure worker computation', () => {
       expect(actual.total).toBeCloseTo(expected.total, 5)
     }
 
+    const unavailable = await computeExposureWorkerRequestAsync(
+      { ...request, computePreference: 'webgpu' },
+      {
+        executor: CPU_VISIBILITY_BATCH_EXECUTOR,
+        selection: {
+          backend: 'cpu',
+          capability: { available: false, reason: 'test adapter unavailable' },
+          fellBackToCpu: true,
+        },
+      },
+    )
+    expect(unavailable).toMatchObject({
+      ok: true,
+      computeBackend: 'cpu',
+      fallbackReason: 'test adapter unavailable',
+    })
+
     const reused = computeExposureWorkerRequest({
       ...request,
       revision: 8,

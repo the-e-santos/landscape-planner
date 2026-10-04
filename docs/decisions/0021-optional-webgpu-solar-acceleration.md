@@ -52,6 +52,9 @@ the correctness reference for accelerated implementations.
   opt-in. Record workload sizes, packed-memory estimates, backend, environment,
   timing, throughput, fallback, and reference disagreement without putting
   hardware-specific timing thresholds in the normal test suite.
+- Retain an opt-in browser validation page for executing the real WGSL pipeline
+  on hardware or software WebGPU adapters. Treat adapter absence as a skipped
+  validation, but treat runtime fallback or numerical disagreement as failure.
 
 ## Consequences
 

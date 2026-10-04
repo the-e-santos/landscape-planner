@@ -1,10 +1,19 @@
 import { describe, expect, it, vi } from 'vitest'
 import {
   detectWebGpuComputeCapability,
+  parseSolarComputePreference,
   selectSolarComputeBackend,
 } from './computeBackend'
 
 describe('solar compute backend selection', () => {
+  it('parses diagnostic URL overrides and defaults invalid values to auto', () => {
+    expect(parseSolarComputePreference('?solar-compute=cpu')).toBe('cpu')
+    expect(parseSolarComputePreference('?solar-compute=webgpu')).toBe('webgpu')
+    expect(parseSolarComputePreference('?solar-compute=auto')).toBe('auto')
+    expect(parseSolarComputePreference('?solar-compute=gpu')).toBe('auto')
+    expect(parseSolarComputePreference('')).toBe('auto')
+  })
+
   it('uses CPU when WebGPU is not exposed', async () => {
     const capability = await detectWebGpuComputeCapability({})
     expect(capability.available).toBe(false)

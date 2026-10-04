@@ -16,6 +16,15 @@ export interface SolarComputeBackendSelection {
   readonly fellBackToCpu: boolean
 }
 
+export function parseSolarComputePreference(
+  search: string,
+): SolarComputePreference {
+  const value = new URLSearchParams(search).get('solar-compute')
+  return value === 'cpu' || value === 'webgpu' || value === 'auto'
+    ? value
+    : 'auto'
+}
+
 /** Adapter acquisition is the capability boundary; navigator.gpu alone is not. */
 export async function detectWebGpuComputeCapability(
   navigatorLike: NavigatorWithOptionalGpu | undefined =

@@ -69,6 +69,7 @@ import type {
   SolarCalculationProgress,
   SolarHeatmapSettings,
 } from './solar/exposureSettings'
+import type { SolarComputePreference } from './solar/computeBackend'
 import type { SurfacePoint } from './solar/pointSolar'
 import {
   clearProjectAutosave,
@@ -459,7 +460,11 @@ function createUserInteractionRule(
   }
 }
 
-function App() {
+interface AppProps {
+  readonly solarComputePreference?: SolarComputePreference
+}
+
+function App({ solarComputePreference = 'auto' }: AppProps) {
   const viewportRef = useRef<HTMLDivElement>(null)
   const yardSceneRef = useRef<YardScene | null>(null)
   const [mode, setMode] = useState<ParcelMode>('rectangle')
@@ -728,6 +733,7 @@ function App() {
       onManipulationCancel: projectStore.cancelTransaction,
       onSolarProbe: setSolarProbeSurface,
       onSolarProgress: setSolarProgress,
+      solarComputePreference,
     })
     yardSceneRef.current = yardScene
 
@@ -735,7 +741,7 @@ function App() {
       yardSceneRef.current = null
       yardScene.dispose()
     }
-  }, [projectStore]) // The Three.js lifecycle is independent of project snapshots.
+  }, [projectStore, solarComputePreference]) // Independent of project snapshots.
 
   useEffect(() => {
     yardSceneRef.current?.updateProject(project)
@@ -899,6 +905,7 @@ function App() {
       <div hidden={!panelVisibility.solar}>
         <SolarAnalysisPanel
         project={project}
+        computePreference={solarComputePreference}
         onHeatmapChange={setSolarHeatmapSettings}
         probedSurface={solarProbeSurface}
         onProbeEnabledChange={setSolarProbeEnabled}

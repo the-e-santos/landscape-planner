@@ -51,9 +51,9 @@ horticultural interpretation, and current limitations.
 
 ## Current status
 
-Milestones 1–11 are complete. Milestone 12 WebGPU acceleration is in progress,
-with GPU-ready scene/BVH buffers, application-level compute routing, safe CPU
-fallback, differential validation, and representative visibility benchmarks.
+Milestones 1–12 are complete. WebGPU accelerates batched direct and diffuse
+visibility when a suitable adapter is available, while the independently tested
+CPU backend keeps solar analysis available without a GPU.
 
 See [docs/PROJECT_PLAN.md](docs/PROJECT_PLAN.md) for the ordered roadmap and
 deferred scope.

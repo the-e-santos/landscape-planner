@@ -1,0 +1,133 @@
+.webgpu-validation {
+  min-height: 100%;
+  box-sizing: border-box;
+  overflow: auto;
+  padding: 3rem max(1.25rem, calc((100% - 72rem) / 2));
+  color: #21312b;
+  background: #eef2ec;
+}
+
+.webgpu-validation header {
+  max-width: 48rem;
+  margin-bottom: 2rem;
+}
+
+.webgpu-validation h1 {
+  margin: 0.25rem 0 0.75rem;
+  font-size: clamp(2rem, 5vw, 3.75rem);
+  line-height: 1;
+}
+
+.webgpu-validation h2 { margin: 0; }
+.webgpu-validation p { line-height: 1.55; }
+
+.webgpu-validation .eyebrow {
+  margin: 0;
+  color: #567064;
+  font-size: 0.8rem;
+  font-weight: 700;
+  letter-spacing: 0.12em;
+  text-transform: uppercase;
+}
+
+.validation-actions,
+.validation-result-heading {
+  display: flex;
+  align-items: center;
+  gap: 0.75rem;
+  flex-wrap: wrap;
+}
+
+.validation-actions { margin-top: 1rem; }
+.validation-result-heading { justify-content: space-between; }
+
+.webgpu-validation button,
+.webgpu-validation a {
+  border: 1px solid #315b47;
+  border-radius: 0.45rem;
+  padding: 0.65rem 0.9rem;
+  color: white;
+  background: #315b47;
+  font: inherit;
+  font-weight: 650;
+  text-decoration: none;
+  cursor: pointer;
+}
+
+.webgpu-validation button.secondary,
+.webgpu-validation a {
+  color: #315b47;
+  background: transparent;
+}
+
+.webgpu-validation button:disabled { cursor: wait; opacity: 0.65; }
+
+.validation-card {
+  margin: 1rem 0;
+  padding: 1.25rem;
+  border: 1px solid #c9d3cc;
+  border-radius: 0.75rem;
+  background: #fff;
+  box-shadow: 0 0.35rem 1.5rem rgb(24 45 35 / 7%);
+}
+
+.validation-pass { border-left: 0.5rem solid #277848; }
+.validation-fail,
+.validation-error { border-left: 0.5rem solid #a33b32; }
+.validation-skipped { border-left: 0.5rem solid #9b741e; }
+
+.validation-metadata {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(14rem, 1fr));
+  gap: 1rem;
+  margin: 1.25rem 0 0;
+}
+
+.validation-metadata dt {
+  color: #567064;
+  font-size: 0.8rem;
+  font-weight: 700;
+  text-transform: uppercase;
+}
+
+.validation-metadata dd {
+  margin: 0.25rem 0 0;
+  overflow-wrap: anywhere;
+}
+
+.validation-table-wrap { overflow-x: auto; }
+
+.webgpu-validation table {
+  width: 100%;
+  margin-top: 1rem;
+  border-collapse: collapse;
+  text-align: left;
+}
+
+.webgpu-validation th,
+.webgpu-validation td {
+  padding: 0.7rem;
+  border-bottom: 1px solid #dce3de;
+  white-space: nowrap;
+}
+
+.case-pass { color: #277848; font-weight: 750; }
+.case-fail { color: #a33b32; font-weight: 750; }
+
+.webgpu-validation textarea {
+  width: 100%;
+  min-height: 22rem;
+  box-sizing: border-box;
+  margin-top: 1rem;
+  padding: 1rem;
+  border: 1px solid #afbeb5;
+  border-radius: 0.45rem;
+  resize: vertical;
+  color: #dce9df;
+  background: #16211c;
+  font: 0.8rem/1.45 ui-monospace, SFMono-Regular, Consolas, monospace;
+}
+
+@media (max-width: 42rem) {
+  .webgpu-validation { padding-top: 1.5rem; }
+}

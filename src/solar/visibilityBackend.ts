@@ -17,6 +17,10 @@ export interface WebGpuAdapterInfoLike {
   readonly isFallbackAdapter?: boolean
   readonly vendor?: string
   readonly architecture?: string
+  readonly device?: string
+  readonly description?: string
+  readonly subgroupMinSize?: number
+  readonly subgroupMaxSize?: number
 }
 
 export interface WebGpuAdapterLike {
@@ -52,6 +56,21 @@ function cpuRuntime(
 
 function errorMessage(error: unknown, fallback: string): string {
   return error instanceof Error ? error.message : fallback
+}
+
+function copyAdapterInfo(
+  info: WebGpuAdapterInfoLike | undefined,
+): WebGpuAdapterInfoLike | undefined {
+  if (!info) return undefined
+  return {
+    isFallbackAdapter: info.isFallbackAdapter,
+    vendor: info.vendor,
+    architecture: info.architecture,
+    device: info.device,
+    description: info.description,
+    subgroupMinSize: info.subgroupMinSize,
+    subgroupMaxSize: info.subgroupMaxSize,
+  }
 }
 
 /**
@@ -98,7 +117,8 @@ export async function createVisibilityBackendRuntime(
       reason: 'The browser could not provide a WebGPU adapter.',
     })
   }
-  if (preference === 'auto' && adapter.info?.isFallbackAdapter) {
+  const adapterInfo = copyAdapterInfo(adapter.info)
+  if (preference === 'auto' && adapterInfo?.isFallbackAdapter) {
     return cpuRuntime(preference, {
       available: true,
       reason: 'Only a software WebGPU adapter is available; auto mode selected CPU.',
@@ -127,12 +147,12 @@ export async function createVisibilityBackendRuntime(
       backend: 'webgpu',
       capability: {
         available: true,
-        reason: adapter.info?.isFallbackAdapter
+        reason: adapterInfo?.isFallbackAdapter
           ? 'A software WebGPU adapter and device are available.'
           : 'A hardware WebGPU adapter and device are available.',
       },
       fellBackToCpu: false,
     },
-    ...(adapter.info ? { adapterInfo: adapter.info } : {}),
+    ...(adapterInfo ? { adapterInfo } : {}),
   }
 }

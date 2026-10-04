@@ -48,6 +48,7 @@ import type {
   ExposureWorkerRequest,
   ExposureWorkerResponse,
 } from '../solar/exposureWorker'
+import type { SolarComputePreference } from '../solar/computeBackend'
 
 interface SceneEntity {
   readonly id: string
@@ -133,6 +134,7 @@ export interface YardSceneOptions {
   readonly onManipulationCancel?: () => void
   readonly onSolarProbe?: (surface: SurfacePoint) => void
   readonly onSolarProgress?: (progress: SolarCalculationProgress) => void
+  readonly solarComputePreference?: SolarComputePreference
 }
 
 export function getPrimitiveEntityIdFromObject(
@@ -415,6 +417,7 @@ export function createYardScene(
         terrains: [...terrainViews.values()].map(({ terrain }) => terrain),
         primitives: [...primitiveViews.values()].map(({ entity }) => entity),
         settings: stage,
+        computePreference: options.solarComputePreference ?? 'auto',
         invalidateAll: invalidateAllExposureTiles,
         changedBounds: pendingChangedBounds,
         cachedTiles: cachedExposureTiles,

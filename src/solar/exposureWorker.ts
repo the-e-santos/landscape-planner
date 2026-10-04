@@ -29,6 +29,7 @@ import {
   createVisibilityBackendRuntime,
   type VisibilityBackendRuntime,
 } from './visibilityBackend'
+import type { SolarComputePreference } from './computeBackend'
 
 type EnabledSettings = Extract<SolarHeatmapSettings, { readonly enabled: true }>
 
@@ -39,6 +40,8 @@ export interface ExposureWorkerRequest {
   readonly terrains: readonly TerrainEntity[]
   readonly primitives: readonly PrimitiveEntity[]
   readonly settings: EnabledSettings
+  /** Diagnostic override; production behavior defaults to capability-aware auto. */
+  readonly computePreference?: SolarComputePreference
   readonly invalidateAll: boolean
   readonly changedBounds: readonly Bounds3[]
   readonly cachedTiles: readonly ExposureTile[]
@@ -210,9 +213,15 @@ export async function computeExposureWorkerRequestAsync(
 ): Promise<ExposureWorkerResponse> {
   try {
     const runtime = runtimeOverride ??
-      await createVisibilityBackendRuntime('auto')
+      await createVisibilityBackendRuntime(data.computePreference ?? 'auto')
     if (runtime.selection.backend === 'cpu') {
-      return computeExposureWorkerRequest(data)
+      const response = computeExposureWorkerRequest(data)
+      return response.ok && runtime.selection.fellBackToCpu
+        ? {
+            ...response,
+            fallbackReason: runtime.selection.capability.reason,
+          }
+        : response
     }
 
     const prepared = prepareSurfaceExposure(data.project, data.settings)

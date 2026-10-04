@@ -21,9 +21,11 @@ import type { SyntheticSkyCondition } from '../solar/climateModel'
 import type { SyntheticClimateParameters } from '../solar/syntheticClimate'
 import { interpretAccumulatedExposure } from '../solar/exposureInterpretation'
 import { createDirectSunDurationEvaluator } from '../solar/directSunDuration'
+import type { SolarComputePreference } from '../solar/computeBackend'
 
 interface SolarAnalysisPanelProps {
   readonly project: LandscapeProject
+  readonly computePreference: SolarComputePreference
   readonly onHeatmapChange: (settings: SolarHeatmapSettings) => void
   readonly probedSurface: SurfacePoint | null
   readonly onProbeEnabledChange: (enabled: boolean) => void
@@ -64,6 +66,7 @@ function pointInputsFromSurface(surface: SurfacePoint): PointInputs {
 
 export function SolarAnalysisPanel({
   project,
+  computePreference,
   onHeatmapChange,
   probedSurface,
   onProbeEnabledChange,
@@ -378,6 +381,13 @@ export function SolarAnalysisPanel({
             ? 'CPU-reference values and surface exposure at one solar instant.'
             : 'Direct and diffuse exposure accumulated across a selected calendar period.'}
         </p>
+        {computePreference !== 'auto' && (
+          <p className="field-note" role="status">
+            Diagnostic override: solar computation is forced to{' '}
+            {computePreference === 'webgpu' ? 'WebGPU' : 'CPU'}. The completion
+            message reports the backend that actually finished the calculation.
+          </p>
+        )}
         <fieldset className="segmented-field solar-mode-field">
           <legend>Exposure period</legend>
           <div className="segmented-control">
