@@ -12,7 +12,7 @@ testable numerical kernels, and an understandable architecture.
 
 Requirements:
 
-- Node.js and npm
+- Node.js 22.12 or newer and npm
 - A current browser. WebGPU is preferred, but it is not required: Three.js can
   render through its WebGL 2 fallback, and solar analysis retains a CPU backend.
 
@@ -40,6 +40,7 @@ The opt-in deterministic visibility benchmark suite is documented in
 ## Documentation
 
 - [Foundational project plan](docs/PROJECT_PLAN.md)
+- [Deployment guide](docs/DEPLOYMENT.md)
 - [Solar analysis guide](docs/SOLAR_ANALYSIS.md)
 - [Visibility benchmarks](docs/BENCHMARKS.md)
 - [Coordinate and unit conventions](docs/COORDINATES.md)
